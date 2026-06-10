@@ -1,0 +1,15 @@
+Mazda MX-5 Miata NB
+
+The NB is the second generation of the Mazda MX-5 Miata.
+It replaced the pop-up headlights with fixed headlights and arrived for the 1998 model year.
+
+Key facts for this test document:
+- Generation code: NB
+- Production era: 1998 to 2005
+- Signature change: fixed headlights instead of pop-up headlights
+- Special performance version: Mazdaspeed Miata
+- Mazdaspeed Miata years: 2004 and 2005
+
+Simple summary:
+If a question mentions fixed headlights or the factory turbo Mazdaspeed Miata,
+the answer should come from this NB document.

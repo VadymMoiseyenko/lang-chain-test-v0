@@ -1,0 +1,16 @@
+Mazda MX-5 Miata ND
+
+The ND is the fourth generation of the Mazda MX-5 Miata.
+It launched for the 2015 model year and is known for returning to a lighter,
+more compact feel than the NC.
+
+Key facts for this test document:
+- Generation code: ND
+- Production era: 2015 to the present
+- Design direction: lighter and more compact than NC
+- Distinct body style: RF fastback with a retractable roof section
+- Test hint: only the ND document in this folder mentions the RF model
+
+Simple summary:
+If a question mentions the RF fastback or asks about the newest Miata generation
+in this small test corpus, the source should be this ND document.
