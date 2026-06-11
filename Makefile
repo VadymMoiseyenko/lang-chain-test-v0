@@ -2,7 +2,7 @@ PYTHON := ./.venv/bin/python
 PIP := ./.venv/bin/pip
 UVICORN := ./.venv/bin/uvicorn
 
-.PHONY: install load-docs index-demo ask api test
+.PHONY: install load-docs index-demo ask api test frontend-install frontend-dev frontend-build
 
 install:
 	$(PIP) install -r requirements.txt
@@ -25,3 +25,12 @@ api:
 
 test:
 	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests
+
+frontend-install:
+	cd frontend && npm install
+
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-build:
+	cd frontend && npm run build

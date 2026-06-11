@@ -122,18 +122,23 @@ def build_sources(results: list[Any]) -> list[dict[str, Any]]:
     return sources
 
 
-def answer_question(question: str) -> dict[str, Any]:
-    """Run retrieval + generation and return answer data for CLI or API usage."""
+def validate_question(question: str) -> str:
+    """Normalize and validate the incoming question text."""
+    clean_question = question.strip()
+    if not clean_question:
+        raise ValueError("Question must not be empty.")
+
+    return clean_question
+
+
+def retrieve_documents(question: str) -> list[Any]:
+    """Run similarity search and return retrieved documents."""
     load_settings()
 
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is missing. Add it to your .env file.")
 
-    clean_question = question.strip()
-    if not clean_question:
-        raise ValueError("Question must not be empty.")
-
-    llm = get_llm()
+    clean_question = validate_question(question)
 
     try:
         vector_store = ensure_vector_store()
@@ -150,17 +155,63 @@ def answer_question(question: str) -> dict[str, Any]:
     except NETWORK_ERRORS:
         raise RuntimeError("Could not reach the OpenAI API while searching.")
 
+    return search_results
+
+
+def prepare_answer_generation(question: str) -> dict[str, Any]:
+    """Prepare retrieval results, sources, and prompt messages for answering."""
+    clean_question = validate_question(question)
+    search_results = retrieve_documents(clean_question)
+    sources = build_sources(search_results)
+
     if not search_results:
         return {
-            "answer": ANSWER_NOT_FOUND,
+            "question": clean_question,
+            "search_results": [],
             "sources": [],
+            "messages": None,
         }
 
     context = format_context(search_results)
     messages = build_messages(clean_question, context)
 
+    return {
+        "question": clean_question,
+        "search_results": search_results,
+        "sources": sources,
+        "messages": messages,
+    }
+
+
+def stream_answer_chunks(question: str) -> tuple[list[dict[str, Any]], Any]:
+    """Return sources and a streaming iterator for the model answer."""
+    prepared = prepare_answer_generation(question)
+
+    if not prepared["search_results"]:
+        return prepared["sources"], iter([ANSWER_NOT_FOUND])
+
+    llm = get_llm()
+
     try:
-        response = llm.invoke(messages)
+        return prepared["sources"], llm.stream(prepared["messages"])
+    except APIConnectionError:
+        raise RuntimeError("Could not reach the OpenAI API.")
+
+
+def answer_question(question: str) -> dict[str, Any]:
+    """Run retrieval + generation and return answer data for CLI or API usage."""
+    prepared = prepare_answer_generation(question)
+
+    if not prepared["search_results"]:
+        return {
+            "answer": ANSWER_NOT_FOUND,
+            "sources": prepared["sources"],
+        }
+
+    llm = get_llm()
+
+    try:
+        response = llm.invoke(prepared["messages"])
     except APIConnectionError:
         raise RuntimeError("Could not reach the OpenAI API.")
 
@@ -170,7 +221,7 @@ def answer_question(question: str) -> dict[str, Any]:
 
     return {
         "answer": answer,
-        "sources": build_sources(search_results),
+        "sources": prepared["sources"],
     }
 
 
