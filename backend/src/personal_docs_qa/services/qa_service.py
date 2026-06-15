@@ -1,5 +1,6 @@
 import os
 import warnings
+from operator import itemgetter
 from typing import Any, Iterator, Optional
 
 # Silence a local macOS/Python SSL warning.
@@ -9,7 +10,9 @@ warnings.filterwarnings(
     category=Warning,
 )
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import Runnable, RunnableLambda, RunnablePassthrough
 from langchain_openai import ChatOpenAI
 from openai import APIConnectionError
 
@@ -41,6 +44,32 @@ def format_context(results: list[Any]) -> str:
         )
 
     return "\n\n".join(parts)
+
+
+def build_answer_prompt() -> ChatPromptTemplate:
+    """Create the reusable prompt template for question answering."""
+    return ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                (
+                    "Ти бот для відповідей по особистих документах. "
+                    "Відповідай тільки на основі наданого контексту. "
+                    f"Якщо у контексті немає відповіді, скажи рівно: {ANSWER_NOT_FOUND}. "
+                    "Не вигадуй фактів і не використовуй зовнішні знання. "
+                    "Відповідай українською мовою."
+                ),
+            ),
+            (
+                "human",
+                (
+                    "Питання: {question}\n\n"
+                    "Контекст:\n{context}\n\n"
+                    "Дай коротку і точну відповідь тільки на основі контексту."
+                ),
+            ),
+        ]
+    )
 
 
 def get_search_k(vector_store: Any, default_k: int) -> int:
@@ -75,26 +104,46 @@ def get_llm(model_name: Optional[str] = None) -> ChatOpenAI:
     return ChatOpenAI(model=selected_model, temperature=0)
 
 
-def build_messages(question: str, context: str) -> list[Any]:
-    """Build the prompt messages for the question-answering call."""
-    return [
-        SystemMessage(
-            content=(
-                "Ти бот для відповідей по особистих документах. "
-                "Відповідай тільки на основі наданого контексту. "
-                f"Якщо у контексті немає відповіді, скажи рівно: {ANSWER_NOT_FOUND}. "
-                "Не вигадуй фактів і не використовуй зовнішні знання. "
-                "Відповідай українською мовою."
-            )
-        ),
-        HumanMessage(
-            content=(
-                f"Питання: {question}\n\n"
-                f"Контекст:\n{context}\n\n"
-                "Дай коротку і точну відповідь тільки на основі контексту."
-            )
-        ),
-    ]
+def build_retriever(vector_store: Any) -> Any:
+    """Create a LangChain retriever around the vector store."""
+    search_k = get_search_k(vector_store, DEFAULT_K)
+    return vector_store.as_retriever(search_kwargs={"k": search_k})
+
+
+def add_context_to_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
+    """Add one formatted context string next to retrieved documents."""
+    return {
+        **inputs,
+        "context": format_context(inputs["search_results"]),
+    }
+
+
+def select_prompt_inputs(inputs: dict[str, Any]) -> dict[str, str]:
+    """Keep only the fields that the prompt template needs."""
+    return {
+        "question": inputs["question"],
+        "context": inputs["context"],
+    }
+
+
+def build_retrieval_chain(retriever: Any) -> Runnable[Any, dict[str, Any]]:
+    """Build the LCEL retrieval step: question -> retrieved docs -> formatted context."""
+    return (
+        RunnablePassthrough.assign(
+            search_results=itemgetter("question") | retriever,
+        )
+        | RunnableLambda(add_context_to_inputs)
+    )
+
+
+def build_generation_chain(llm: Runnable[Any, Any]) -> Runnable[Any, str]:
+    """Build the LCEL generation step: prompt -> chat model -> text parser."""
+    return (
+        RunnableLambda(select_prompt_inputs)
+        | build_answer_prompt()
+        | llm
+        | StrOutputParser()
+    )
 
 
 def build_sources(results: list[Any]) -> list[dict[str, Any]]:
@@ -122,34 +171,32 @@ def validate_question(question: str) -> str:
     return clean_question
 
 
-def retrieve_documents(question: str) -> list[Any]:
-    """Run similarity search and return retrieved documents."""
+def get_ready_retriever() -> Any:
+    """Create the retriever after checking settings and opening the vector store."""
     load_settings()
 
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("OPENAI_API_KEY is missing. Add it to your .env file.")
-
-    clean_question = validate_question(question)
 
     try:
         vector_store = ensure_vector_store()
     except NETWORK_ERRORS:
         raise RuntimeError("Could not reach the OpenAI API while creating embeddings.")
 
-    search_k = get_search_k(vector_store, DEFAULT_K)
-
-    try:
-        search_results = vector_store.similarity_search(clean_question, k=search_k)
-    except NETWORK_ERRORS:
-        raise RuntimeError("Could not reach the OpenAI API while searching.")
-
-    return search_results
+    return build_retriever(vector_store)
 
 
 def prepare_answer_generation(question: str) -> dict[str, Any]:
-    """Prepare retrieval results, sources, and prompt messages for answering."""
+    """Prepare retrieval results and prompt-ready inputs for answer generation."""
     clean_question = validate_question(question)
-    search_results = retrieve_documents(clean_question)
+    retrieval_chain = build_retrieval_chain(get_ready_retriever())
+
+    try:
+        prepared = retrieval_chain.invoke({"question": clean_question})
+    except NETWORK_ERRORS:
+        raise RuntimeError("Could not reach the OpenAI API while searching.")
+
+    search_results = prepared["search_results"]
     sources = build_sources(search_results)
 
     if not search_results:
@@ -157,17 +204,14 @@ def prepare_answer_generation(question: str) -> dict[str, Any]:
             "question": clean_question,
             "search_results": [],
             "sources": [],
-            "messages": None,
+            "context": "",
         }
-
-    context = format_context(search_results)
-    messages = build_messages(clean_question, context)
 
     return {
         "question": clean_question,
         "search_results": search_results,
         "sources": sources,
-        "messages": messages,
+        "context": prepared["context"],
     }
 
 
@@ -178,10 +222,10 @@ def stream_answer_chunks(question: str) -> tuple[list[dict[str, Any]], Iterator[
     if not prepared["search_results"]:
         return prepared["sources"], iter([ANSWER_NOT_FOUND])
 
-    llm = get_llm()
+    generation_chain = build_generation_chain(get_llm())
 
     try:
-        return prepared["sources"], llm.stream(prepared["messages"])
+        return prepared["sources"], generation_chain.stream(prepared)
     except APIConnectionError:
         raise RuntimeError("Could not reach the OpenAI API.")
 
@@ -196,14 +240,14 @@ def answer_question(question: str) -> dict[str, Any]:
             "sources": prepared["sources"],
         }
 
-    llm = get_llm()
+    generation_chain = build_generation_chain(get_llm())
 
     try:
-        response = llm.invoke(prepared["messages"])
+        response = generation_chain.invoke(prepared)
     except APIConnectionError:
         raise RuntimeError("Could not reach the OpenAI API.")
 
-    answer = normalize_answer(str(response.content))
+    answer = normalize_answer(response)
     if not answer:
         answer = ANSWER_NOT_FOUND
 

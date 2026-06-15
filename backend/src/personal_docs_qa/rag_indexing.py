@@ -93,3 +93,15 @@ def ensure_vector_store(persist_directory: Path = CHROMA_DIR) -> Chroma:
         return open_vector_store(persist_directory)
 
     return build_vector_store_from_docs(persist_directory)
+
+
+def main() -> None:
+    """Build the local vector store and print a small status message."""
+    vector_store = build_vector_store_from_docs()
+    collection = getattr(vector_store, "_collection", None)
+    chunk_count = collection.count() if collection is not None else "unknown"
+    print(f"Built Chroma index in {CHROMA_DIR} with {chunk_count} chunks.")
+
+
+if __name__ == "__main__":
+    main()

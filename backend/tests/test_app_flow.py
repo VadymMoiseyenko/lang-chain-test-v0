@@ -9,9 +9,14 @@ from personal_docs_qa.api import app
 from personal_docs_qa.rag_indexing import split_into_chunks
 from personal_docs_qa.services.qa_service import (
     ANSWER_NOT_FOUND,
+    add_context_to_inputs,
+    build_answer_prompt,
+    build_generation_chain,
+    build_retrieval_chain,
     build_sources,
     normalize_answer,
 )
+from langchain_core.runnables import RunnableLambda
 
 
 class MainFlowTests(unittest.TestCase):
@@ -45,6 +50,63 @@ class MainFlowTests(unittest.TestCase):
 
     def test_normalize_answer_keeps_exact_fallback(self) -> None:
         self.assertEqual(normalize_answer(f"{ANSWER_NOT_FOUND}."), ANSWER_NOT_FOUND)
+
+    def test_add_context_to_inputs_formats_retrieved_documents(self) -> None:
+        inputs = {
+            "question": "Що відомо про NA?",
+            "search_results": [
+                Document(
+                    page_content="MX-5 NA is the first generation.",
+                    metadata={"source": "docs/mazda-mx5-na.md", "chunk_index": 1},
+                )
+            ],
+        }
+
+        prepared = add_context_to_inputs(inputs)
+
+        self.assertIn("[Fragment 1]", prepared["context"])
+        self.assertIn("docs/mazda-mx5-na.md", prepared["context"])
+
+    def test_build_answer_prompt_contains_question_and_context_variables(self) -> None:
+        prompt_value = build_answer_prompt().invoke(
+            {
+                "question": "Що відомо про ND?",
+                "context": "source: docs/mazda-mx5-nd.txt",
+            }
+        )
+
+        prompt_text = prompt_value.to_string()
+        self.assertIn("Що відомо про ND?", prompt_text)
+        self.assertIn("docs/mazda-mx5-nd.txt", prompt_text)
+
+    def test_build_generation_chain_returns_plain_text(self) -> None:
+        fake_llm = RunnableLambda(lambda _: "Коротка відповідь")
+        chain = build_generation_chain(fake_llm)
+
+        answer = chain.invoke(
+            {
+                "question": "Що відомо про NC?",
+                "context": "source: docs/mazda-mx5-nc.md",
+            }
+        )
+
+        self.assertEqual(answer, "Коротка відповідь")
+
+    def test_build_retrieval_chain_adds_documents_and_context(self) -> None:
+        fake_retriever = RunnableLambda(
+            lambda question: [
+                Document(
+                    page_content=f"Знайдений фрагмент для: {question}",
+                    metadata={"source": "docs/example.md", "chunk_index": 1},
+                )
+            ]
+        )
+        retrieval_chain = build_retrieval_chain(fake_retriever)
+
+        prepared = retrieval_chain.invoke({"question": "Що є в документах?"})
+
+        self.assertEqual(len(prepared["search_results"]), 1)
+        self.assertIn("docs/example.md", prepared["context"])
 
 
 class ApiTests(unittest.TestCase):

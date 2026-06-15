@@ -35,3 +35,16 @@ def make_preview(text: str, max_chars: int = 80) -> str:
         return clean_text
 
     return clean_text[:max_chars] + "..."
+
+
+def main() -> None:
+    """Print a simple summary of the local documents folder."""
+    documents = load_text_files(DOCS_DIR)
+    print(f"Loaded {len(documents)} documents from {DOCS_DIR}")
+
+    for document in documents:
+        print(f"- {document.metadata['source']} ({document.metadata['length']} chars)")
+
+
+if __name__ == "__main__":
+    main()
