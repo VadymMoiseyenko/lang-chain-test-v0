@@ -1,0 +1,23 @@
+[
+  {
+    "name": "NA question from docs",
+    "question": "У якого покоління Miata були pop-up headlights?",
+    "expected_sources": ["mazda-mx5-na.md"],
+    "must_include": ["NA", "pop-up headlights"],
+    "expect_fallback": false
+  },
+  {
+    "name": "NB vs NA comparison",
+    "question": "Яка різниця між MX-5 NA і NB щодо фар?",
+    "expected_sources": ["mazda-mx5-na.md", "mazda-mx5-nb.txt"],
+    "must_include": ["NA", "NB", "підйомні", "стаціонарні"],
+    "expect_fallback": false
+  },
+  {
+    "name": "Missing answer fallback",
+    "question": "Який Miata має V8 двигун із заводу?",
+    "expected_sources": [],
+    "must_include": [],
+    "expect_fallback": true
+  }
+]

@@ -70,6 +70,7 @@ cd ..
 ```bash
 make install
 make test
+make eval
 make load-docs
 make index-demo
 make ask QUESTION="Яка різниця між MX-5 NA і ND?"
@@ -86,6 +87,7 @@ make frontend-build
 PYTHONPATH=backend/src ./.venv/bin/python -m personal_docs_qa.load_local_docs
 PYTHONPATH=backend/src ./.venv/bin/python -m personal_docs_qa.rag_indexing
 PYTHONPATH=backend/src ./.venv/bin/python -m personal_docs_qa.main
+PYTHONPATH=backend/src ./.venv/bin/python -m personal_docs_qa.eval_rag
 PYTHONPATH=backend/src ./.venv/bin/python -m personal_docs_qa.main "Яка різниця між MX-5 NA і ND?"
 PYTHONPATH=backend/src ./.venv/bin/uvicorn personal_docs_qa.api:app --reload
 PYTHONPATH=backend/src ./.venv/bin/python -m unittest discover -s backend/tests
@@ -156,9 +158,49 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 ## Validation Notes
 
 - `make test` і `make load-docs` не потребують OpenAI API
-- `make index-demo`, `make ask` і `make api` потребують валідний `OPENAI_API_KEY`
+- `make test` перевіряє локальну Python-логіку без реальних OpenAI викликів
+- `make eval` перевіряє реальний RAG flow end-to-end: retrieval + LLM answer
+- `make index-demo`, `make ask`, `make eval` і `make api` потребують валідний `OPENAI_API_KEY`
 - для побудови індексу та answer generation потрібен інтернет-доступ до OpenAI API
 - `.env`, `frontend/.env`, `data/index/` і `frontend/node_modules/` не мають потрапляти в git
+
+## RAG Eval
+
+У проєкті є простий evaluation-файл: [backend/eval_cases.json](/Users/vadym_moiseyenko/Documents/LangChain/backend/eval_cases.json).
+
+Кожен кейс містить:
+
+- `name`: коротка назва сценарію
+- `question`: тестове питання
+- `expected_sources`: які файли retrieval має дістати
+- `must_include`: які фрази бажано побачити у відповіді
+- `expect_fallback`: чи бот має повернути `Я не знайшов цього в документах`
+
+Запуск:
+
+```bash
+make eval
+```
+
+Приклад кейсів:
+
+- питання, яке прямо покривається документом про `NA`
+- comparison question між `NA` і `NB`
+- питання поза документами, де очікується fallback
+
+Різниця між `unit tests` і `RAG eval`:
+
+- `unit tests` перевіряють маленькі частини коду із моками, тому вони швидкі, стабільні й не потребують OpenAI
+- `RAG eval` запускає справжній retrieval і справжню генерацію відповіді, тому він корисний для перевірки якості RAG-поведінки, але залежить від моделі, індексу та мережі
+
+Як додати новий eval-кейс:
+
+1. Відкрий `backend/eval_cases.json`
+2. Додай новий JSON-об'єкт у список
+3. Заповни `question`
+4. Додай `expected_sources` через назви файлів, наприклад `mazda-mx5-nd.txt`
+5. Додай `must_include` для ключових фраз у відповіді
+6. Для питання без відповіді в документах постав `expect_fallback: true`
 
 ## Frontend
 

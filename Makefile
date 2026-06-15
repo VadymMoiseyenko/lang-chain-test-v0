@@ -5,7 +5,7 @@ BACKEND_SRC := backend/src
 BACKEND_TESTS := backend/tests
 BACKEND_REQUIREMENTS := backend/requirements.txt
 
-.PHONY: install load-docs index-demo ask api test frontend-install frontend-dev frontend-build
+.PHONY: install load-docs index-demo ask api test eval frontend-install frontend-dev frontend-build
 
 install:
 	$(PIP) install -r $(BACKEND_REQUIREMENTS)
@@ -24,6 +24,9 @@ api:
 
 test:
 	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m unittest discover -s $(BACKEND_TESTS)
+
+eval:
+	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m personal_docs_qa.eval_rag
 
 frontend-install:
 	cd frontend && npm install

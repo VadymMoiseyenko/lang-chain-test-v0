@@ -230,17 +230,15 @@ def stream_answer_chunks(question: str) -> tuple[list[dict[str, Any]], Iterator[
         raise RuntimeError("Could not reach the OpenAI API.")
 
 
-def answer_question(question: str) -> dict[str, Any]:
-    """Run retrieval + generation and return answer data for CLI or API usage."""
-    prepared = prepare_answer_generation(question)
-
+def generate_answer_from_prepared(
+    prepared: dict[str, Any],
+    llm: Optional[Runnable[Any, Any]] = None,
+) -> str:
+    """Generate one final answer from prepared retrieval results."""
     if not prepared["search_results"]:
-        return {
-            "answer": ANSWER_NOT_FOUND,
-            "sources": prepared["sources"],
-        }
+        return ANSWER_NOT_FOUND
 
-    generation_chain = build_generation_chain(get_llm())
+    generation_chain = build_generation_chain(llm or get_llm())
 
     try:
         response = generation_chain.invoke(prepared)
@@ -249,9 +247,16 @@ def answer_question(question: str) -> dict[str, Any]:
 
     answer = normalize_answer(response)
     if not answer:
-        answer = ANSWER_NOT_FOUND
+        return ANSWER_NOT_FOUND
+
+    return answer
+
+
+def answer_question(question: str) -> dict[str, Any]:
+    """Run retrieval + generation and return answer data for CLI or API usage."""
+    prepared = prepare_answer_generation(question)
 
     return {
-        "answer": answer,
+        "answer": generate_answer_from_prepared(prepared),
         "sources": prepared["sources"],
     }
