@@ -24,6 +24,5 @@ class LoadLocalDocsTests(unittest.TestCase):
         preview = make_preview("Hello\n\nworld   from   docs", max_chars=12)
         self.assertEqual(preview, "Hello world ...")
 
-
 if __name__ == "__main__":
     unittest.main()

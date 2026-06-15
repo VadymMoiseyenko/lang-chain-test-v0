@@ -6,8 +6,12 @@ from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
 from personal_docs_qa.api import app
-from personal_docs_qa.main import ANSWER_NOT_FOUND, build_sources, normalize_answer
 from personal_docs_qa.rag_indexing import split_into_chunks
+from personal_docs_qa.services.qa_service import (
+    ANSWER_NOT_FOUND,
+    build_sources,
+    normalize_answer,
+)
 
 
 class MainFlowTests(unittest.TestCase):

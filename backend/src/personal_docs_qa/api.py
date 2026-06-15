@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any, Iterator, Optional
 
-from personal_docs_qa.main import answer_question, stream_answer_chunks
+from personal_docs_qa.services.qa_service import answer_question, stream_answer_chunks
 
 
 app = FastAPI(title="Personal Docs Q&A API")

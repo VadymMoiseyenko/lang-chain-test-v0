@@ -1,30 +1,33 @@
 PYTHON := ./.venv/bin/python
 PIP := ./.venv/bin/pip
 UVICORN := ./.venv/bin/uvicorn
+BACKEND_SRC := backend/src
+BACKEND_TESTS := backend/tests
+BACKEND_REQUIREMENTS := backend/requirements.txt
 
 .PHONY: install load-docs index-demo ask api test frontend-install frontend-dev frontend-build
 
 install:
-	$(PIP) install -r requirements.txt
+	$(PIP) install -r $(BACKEND_REQUIREMENTS)
 
 load-docs:
-	PYTHONPATH=src $(PYTHON) -m personal_docs_qa.load_local_docs
+	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m personal_docs_qa.load_local_docs
 
 index-demo:
-	PYTHONPATH=src $(PYTHON) -m personal_docs_qa.rag_indexing
+	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m personal_docs_qa.rag_indexing
 
 ask:
 ifeq ($(strip $(QUESTION)),)
-	PYTHONPATH=src $(PYTHON) -m personal_docs_qa.main
+	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m personal_docs_qa.main
 else
-	PYTHONPATH=src $(PYTHON) -m personal_docs_qa.main "$(QUESTION)"
+	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m personal_docs_qa.main "$(QUESTION)"
 endif
 
 api:
-	PYTHONPATH=src $(UVICORN) personal_docs_qa.api:app --reload
+	PYTHONPATH=$(BACKEND_SRC) $(UVICORN) personal_docs_qa.api:app --reload
 
 test:
-	PYTHONPATH=src $(PYTHON) -m unittest discover -s tests
+	PYTHONPATH=$(BACKEND_SRC) $(PYTHON) -m unittest discover -s $(BACKEND_TESTS)
 
 frontend-install:
 	cd frontend && npm install

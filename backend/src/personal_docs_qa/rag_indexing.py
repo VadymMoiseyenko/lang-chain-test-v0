@@ -3,7 +3,7 @@ import shutil
 import warnings
 from pathlib import Path
 
-# Silence a local macOS/Python SSL warning that does not affect this example.
+# Silence a local macOS/Python SSL warning.
 warnings.filterwarnings(
     "ignore",
     message="urllib3 v2 only supports OpenSSL 1.1.1+",
@@ -24,7 +24,6 @@ from personal_docs_qa.load_local_docs import load_text_files, make_preview
 CHROMA_DIR = INDEX_DIR / "chroma"
 COLLECTION_NAME = "personal-docs-qa"
 NETWORK_ERRORS = (APIConnectionError, RequestsConnectionError)
-
 
 def load_documents() -> list[Document]:
     """Load source documents that we want to index."""
