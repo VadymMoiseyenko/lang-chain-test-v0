@@ -19,6 +19,10 @@ class LoadLocalDocsTests(unittest.TestCase):
         self.assertTrue(documents[0].metadata["source"].endswith("car.txt"))
         self.assertTrue(documents[1].metadata["source"].endswith("note.md"))
         self.assertEqual(documents[0].metadata["length"], len("Mazda MX-5"))
+        self.assertEqual(documents[0].metadata["source_name"], "car.txt")
+        self.assertEqual(documents[0].metadata["source_type"], ".txt")
+        self.assertEqual(len(documents[0].metadata["source_checksum"]), 64)
+        self.assertIn("T", documents[0].metadata["modified_at"])
 
     def test_make_preview_normalizes_whitespace_and_truncates(self) -> None:
         preview = make_preview("Hello\n\nworld   from   docs", max_chars=12)

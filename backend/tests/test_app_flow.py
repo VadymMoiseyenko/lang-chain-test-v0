@@ -6,7 +6,13 @@ from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
 from personal_docs_qa.api import app
-from personal_docs_qa.rag_indexing import create_embeddings, split_into_chunks
+from personal_docs_qa.rag_indexing import (
+    build_ingestion_plan,
+    build_manifest,
+    create_embeddings,
+    describe_ingestion_plan,
+    split_into_chunks,
+)
 from personal_docs_qa.services.qa_service import (
     ANSWER_NOT_FOUND,
     add_context_to_inputs,
@@ -38,6 +44,111 @@ class MainFlowTests(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertEqual(chunks[0].metadata["chunk_index"], 1)
         self.assertIn("chunk_chars", chunks[0].metadata)
+        self.assertEqual(chunks[0].metadata["chunk_id"], "demo.md::chunk::1")
+
+    def test_split_into_chunks_restarts_chunk_index_for_each_source(self) -> None:
+        documents = [
+            Document(
+                page_content="A" * 300,
+                metadata={"source": "docs/first.md", "length": 300},
+            ),
+            Document(
+                page_content="B" * 300,
+                metadata={"source": "docs/second.md", "length": 300},
+            ),
+        ]
+
+        chunks = split_into_chunks(documents, chunk_size=120, chunk_overlap=20)
+        first_chunk_per_source = {}
+
+        for chunk in chunks:
+            source = chunk.metadata["source"]
+            first_chunk_per_source.setdefault(source, chunk.metadata["chunk_index"])
+
+        self.assertEqual(first_chunk_per_source["docs/first.md"], 1)
+        self.assertEqual(first_chunk_per_source["docs/second.md"], 1)
+
+    def test_build_ingestion_plan_detects_added_changed_and_deleted_files(self) -> None:
+        documents = [
+            Document(
+                page_content="new content",
+                metadata={
+                    "source": "docs/current.md",
+                    "source_name": "current.md",
+                    "source_type": ".md",
+                    "length": 11,
+                    "source_checksum": "new-checksum",
+                    "modified_at": "2026-06-16T12:00:00+00:00",
+                },
+            ),
+            Document(
+                page_content="brand new",
+                metadata={
+                    "source": "docs/added.md",
+                    "source_name": "added.md",
+                    "source_type": ".md",
+                    "length": 9,
+                    "source_checksum": "added-checksum",
+                    "modified_at": "2026-06-16T12:00:00+00:00",
+                },
+            ),
+        ]
+        previous_manifest = {
+            "documents": [
+                {
+                    "source": "docs/current.md",
+                    "source_checksum": "old-checksum",
+                },
+                {
+                    "source": "docs/deleted.md",
+                    "source_checksum": "deleted-checksum",
+                },
+            ]
+        }
+
+        plan = build_ingestion_plan(documents, previous_manifest)
+
+        self.assertEqual(plan["added"], ["docs/added.md"])
+        self.assertEqual(plan["changed"], ["docs/current.md"])
+        self.assertEqual(plan["deleted"], ["docs/deleted.md"])
+        self.assertTrue(plan["needs_rebuild"])
+
+    def test_build_manifest_stores_chunk_count_per_document(self) -> None:
+        documents = [
+            Document(
+                page_content="A" * 400,
+                metadata={
+                    "source": "docs/na.md",
+                    "source_name": "na.md",
+                    "source_type": ".md",
+                    "length": 400,
+                    "source_checksum": "checksum-a",
+                    "modified_at": "2026-06-16T12:00:00+00:00",
+                },
+            )
+        ]
+
+        chunks = split_into_chunks(documents, chunk_size=150, chunk_overlap=20)
+        manifest = build_manifest(documents, chunks)
+
+        self.assertEqual(manifest["document_count"], 1)
+        self.assertEqual(manifest["chunk_count"], len(chunks))
+        self.assertEqual(manifest["documents"][0]["chunk_count"], len(chunks))
+
+    def test_describe_ingestion_plan_returns_readable_summary(self) -> None:
+        summary = describe_ingestion_plan(
+            {
+                "added": ["a"],
+                "changed": ["b"],
+                "deleted": [],
+                "unchanged": ["c", "d"],
+            }
+        )
+
+        self.assertEqual(
+            summary,
+            "Ingestion plan: 1 added, 1 changed, 0 deleted, 2 unchanged.",
+        )
 
     def test_create_embeddings_loads_local_settings_before_client_init(self) -> None:
         with patch("personal_docs_qa.rag_indexing.load_settings") as mocked_load_settings:

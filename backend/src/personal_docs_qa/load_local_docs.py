@@ -1,8 +1,36 @@
+import hashlib
+from datetime import datetime, timezone
 from pathlib import Path
 
 from langchain_core.documents import Document
 
-from personal_docs_qa.config import DOCS_DIR
+from personal_docs_qa.config import DOCS_DIR, PROJECT_ROOT
+
+
+def _make_relative_source(path: Path) -> str:
+    """Store a readable project-relative source path in metadata."""
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _build_file_metadata(path: Path, text: str) -> dict[str, object]:
+    """Collect file metadata that will later help with indexing decisions."""
+    stats = path.stat()
+    modified_at = datetime.fromtimestamp(
+        stats.st_mtime,
+        tz=timezone.utc,
+    ).isoformat()
+
+    return {
+        "source": _make_relative_source(path),
+        "source_name": path.name,
+        "source_type": path.suffix.lower(),
+        "length": len(text),
+        "source_checksum": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "modified_at": modified_at,
+    }
 
 
 def load_text_files(folder: Path) -> list[Document]:
@@ -17,10 +45,7 @@ def load_text_files(folder: Path) -> list[Document]:
 
         document = Document(
             page_content=text,
-            metadata={
-                "source": str(path),
-                "length": len(text),
-            },
+            metadata=_build_file_metadata(path, text),
         )
         documents.append(document)
 
@@ -43,7 +68,11 @@ def main() -> None:
     print(f"Loaded {len(documents)} documents from {DOCS_DIR}")
 
     for document in documents:
-        print(f"- {document.metadata['source']} ({document.metadata['length']} chars)")
+        checksum = str(document.metadata["source_checksum"])[:12]
+        print(
+            f"- {document.metadata['source']} "
+            f"({document.metadata['length']} chars, sha256 {checksum})"
+        )
 
 
 if __name__ == "__main__":

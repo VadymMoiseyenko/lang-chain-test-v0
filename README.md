@@ -10,6 +10,7 @@
 
 - читає `.md` і `.txt` файли з папки `docs/`
 - будує локальний Chroma index у `data/index/chroma/`
+- зберігає простий ingestion manifest у `data/index/ingestion_manifest.json`
 - шукає релевантні фрагменти
 - переписує follow-up питання у standalone question перед retrieval
 - відповідає на питання через CLI, HTTP API або простий frontend chat
@@ -139,6 +140,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 
 - LangChain chunking
 - OpenAI embeddings
+- change-aware ingestion planning
 - Chroma index creation/opening
 - similarity search access
 
@@ -166,6 +168,49 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - `make index-demo`, `make ask`, `make eval` і `make api` потребують валідний `OPENAI_API_KEY`
 - для побудови індексу та answer generation потрібен інтернет-доступ до OpenAI API
 - `.env`, `frontend/.env`, `data/index/` і `frontend/node_modules/` не мають потрапляти в git
+
+## Why Ingestion Matters In RAG
+
+Ingestion це етап, на якому ми перетворюємо сирі файли у щось, з чим може працювати retrieval:
+
+- читаємо документи
+- додаємо metadata
+- ріжемо текст на chunks
+- рахуємо embeddings
+- записуємо все у vector store
+
+Якщо ingestion ненадійний, у RAG з'являються дуже практичні проблеми:
+
+- новий файл є у `docs/`, але його ще немає в index
+- змінений файл повертає стару інформацію
+- видалений файл усе ще підмішується у retrieval
+- важко зрозуміти, з якого саме файлу прийшов fragment
+
+Тому в цьому проєкті ingestion став трохи ближчим до production:
+
+- кожен source document має checksum і базову file metadata
+- кожен chunk має `chunk_index` і стабільний `chunk_id`
+- перед індексацією ми порівнюємо поточні файли з попереднім manifest
+- якщо змін немає, існуючий Chroma index перевикористовується
+- якщо є `added`, `changed` або `deleted`, index перебудовується і manifest оновлюється
+
+Це ще не повний incremental upsert/delete у Chroma, але це правильний перший крок: система вже розуміє, що саме змінилося.
+
+## Current Ingestion Design
+
+Зараз flow такий:
+
+1. `load_local_docs.py` читає `.md` і `.txt`, додає `source`, `source_name`, `source_checksum`, `modified_at`
+2. `rag_indexing.py` будує ingestion plan: `added`, `changed`, `deleted`, `unchanged`
+3. якщо змін нема, відкриваємо існуючий index
+4. якщо зміни є, заново будуємо chunks і Chroma index
+5. після rebuild зберігаємо `data/index/ingestion_manifest.json`
+
+Наступний production-like крок, якщо захочеш піти далі:
+
+1. видаляти з Chroma тільки чанки файлів із `deleted` та `changed`
+2. доіндексовувати тільки чанки файлів із `added` та `changed`
+3. уникати повного rebuild навіть коли змінився один документ
 
 ## Conversational RAG
 
