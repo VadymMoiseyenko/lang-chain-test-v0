@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any, Iterator, Optional
+from typing import Literal
 
 from personal_docs_qa.services.qa_service import answer_question, stream_answer_chunks
 
@@ -25,8 +26,17 @@ app.add_middleware(
 )
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1)
+
+
 class AskRequest(BaseModel):
     question: str = Field(..., min_length=1, description="User question about local documents.")
+    chat_history: list[ChatMessage] = Field(
+        default_factory=list,
+        description="Previous user and assistant messages for follow-up questions.",
+    )
 
 
 class SourceItem(BaseModel):
@@ -55,7 +65,10 @@ def read_root() -> dict[str, str]:
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest) -> AskResponse:
     try:
-        result = answer_question(request.question)
+        result = answer_question(
+            request.question,
+            chat_history=[message.model_dump() for message in request.chat_history],
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:
@@ -67,7 +80,10 @@ def ask(request: AskRequest) -> AskResponse:
 @app.post("/ask/stream")
 def ask_stream(request: AskRequest) -> StreamingResponse:
     try:
-        sources, answer_stream = stream_answer_chunks(request.question)
+        sources, answer_stream = stream_answer_chunks(
+            request.question,
+            chat_history=[message.model_dump() for message in request.chat_history],
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except RuntimeError as error:

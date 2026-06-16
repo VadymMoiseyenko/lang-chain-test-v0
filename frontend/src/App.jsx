@@ -29,6 +29,17 @@ function parseSseEvent(eventBlock) {
   };
 }
 
+function buildChatHistory(messages) {
+  return messages
+    .filter((message) => !message.isSystemGreeting)
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter((message) => message.text && message.text.trim())
+    .map((message) => ({
+      role: message.role,
+      content: message.text.trim(),
+    }));
+}
+
 function App() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState([
@@ -37,6 +48,7 @@ function App() {
       role: "assistant",
       text: "Привіт! Постав питання про документи з цієї бази.",
       sources: [],
+      isSystemGreeting: true,
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +67,7 @@ function App() {
       role: "user",
       text: trimmedQuestion,
     };
+    const chatHistory = buildChatHistory(messages);
     const assistantMessageId = Date.now() + 1;
     const assistantMessage = {
       id: assistantMessageId,
@@ -78,7 +91,10 @@ function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ question: trimmedQuestion }),
+        body: JSON.stringify({
+          question: trimmedQuestion,
+          chat_history: chatHistory,
+        }),
       });
 
       if (!response.ok) {

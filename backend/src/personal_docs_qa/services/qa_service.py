@@ -2,6 +2,7 @@ import os
 import warnings
 from operator import itemgetter
 from typing import Any, Iterator, Optional
+from typing import Literal
 
 # Silence a local macOS/Python SSL warning.
 warnings.filterwarnings(
@@ -23,6 +24,8 @@ from personal_docs_qa.rag_indexing import NETWORK_ERRORS, ensure_vector_store
 
 ANSWER_NOT_FOUND = "Я не знайшов цього в документах"
 DEFAULT_K = 4
+MAX_HISTORY_MESSAGES = 6
+ChatRole = Literal["user", "assistant"]
 
 
 def format_context(results: list[Any]) -> str:
@@ -46,6 +49,25 @@ def format_context(results: list[Any]) -> str:
     return "\n\n".join(parts)
 
 
+def format_chat_history(chat_history: list[dict[str, str]]) -> str:
+    """Convert prior chat messages into a compact text block for rewriting."""
+    if not chat_history:
+        return "Історія чату відсутня."
+
+    lines: list[str] = []
+    role_labels = {
+        "user": "Користувач",
+        "assistant": "Бот",
+    }
+
+    for message in chat_history:
+        role = message["role"]
+        content = message["content"]
+        lines.append(f"{role_labels.get(role, role)}: {content}")
+
+    return "\n".join(lines)
+
+
 def build_answer_prompt() -> ChatPromptTemplate:
     """Create the reusable prompt template for question answering."""
     return ChatPromptTemplate.from_messages(
@@ -66,6 +88,32 @@ def build_answer_prompt() -> ChatPromptTemplate:
                     "Питання: {question}\n\n"
                     "Контекст:\n{context}\n\n"
                     "Дай коротку і точну відповідь тільки на основі контексту."
+                ),
+            ),
+        ]
+    )
+
+
+def build_question_rewrite_prompt() -> ChatPromptTemplate:
+    """Create the prompt that rewrites a follow-up question into a standalone one."""
+    return ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                (
+                    "Ти допомагаєш переписати питання для пошуку по документах. "
+                    "Використай історію чату лише для того, щоб зробити нове питання "
+                    "самодостатнім і зрозумілим без попередніх реплік. "
+                    "Не відповідай на питання. Не додавай нових фактів. "
+                    "Поверни тільки одне переписане питання українською мовою."
+                ),
+            ),
+            (
+                "human",
+                (
+                    "Історія чату:\n{chat_history}\n\n"
+                    "Нове питання:\n{question}\n\n"
+                    "Перепиши нове питання так, щоб його можна було напряму використати для пошуку."
                 ),
             ),
         ]
@@ -121,7 +169,7 @@ def add_context_to_inputs(inputs: dict[str, Any]) -> dict[str, Any]:
 def select_prompt_inputs(inputs: dict[str, Any]) -> dict[str, str]:
     """Keep only the fields that the prompt template needs."""
     return {
-        "question": inputs["question"],
+        "question": inputs.get("standalone_question", inputs["question"]),
         "context": inputs["context"],
     }
 
@@ -130,7 +178,7 @@ def build_retrieval_chain(retriever: Any) -> Runnable[Any, dict[str, Any]]:
     """Build the LCEL retrieval step: question -> retrieved docs -> formatted context."""
     return (
         RunnablePassthrough.assign(
-            search_results=itemgetter("question") | retriever,
+            search_results=itemgetter("standalone_question") | retriever,
         )
         | RunnableLambda(add_context_to_inputs)
     )
@@ -171,6 +219,64 @@ def validate_question(question: str) -> str:
     return clean_question
 
 
+def normalize_chat_history(
+    chat_history: Optional[list[dict[str, str]]],
+) -> list[dict[str, str]]:
+    """Validate and trim chat history to the most recent useful messages."""
+    if not chat_history:
+        return []
+
+    normalized_history: list[dict[str, str]] = []
+
+    for message in chat_history:
+        role = str(message.get("role", "")).strip()
+        content = str(message.get("content", "")).strip()
+
+        if role not in {"user", "assistant"}:
+            raise ValueError("Chat history roles must be 'user' or 'assistant'.")
+
+        if not content:
+            continue
+
+        normalized_history.append(
+            {
+                "role": role,
+                "content": content,
+            }
+        )
+
+    return normalized_history[-MAX_HISTORY_MESSAGES:]
+
+
+def rewrite_question(
+    question: str,
+    chat_history: list[dict[str, str]],
+    llm: Optional[Runnable[Any, Any]] = None,
+) -> str:
+    """Rewrite a follow-up question into a standalone retrieval question."""
+    if not chat_history:
+        return question
+
+    rewrite_chain = (
+        build_question_rewrite_prompt()
+        | (llm or get_llm())
+        | StrOutputParser()
+    )
+
+    try:
+        rewritten_question = rewrite_chain.invoke(
+            {
+                "question": question,
+                "chat_history": format_chat_history(chat_history),
+            }
+        )
+    except APIConnectionError:
+        raise RuntimeError("Could not reach the OpenAI API while rewriting the question.")
+
+    cleaned_question = rewritten_question.strip()
+    return cleaned_question or question
+
+
 def get_ready_retriever() -> Any:
     """Create the retriever after checking settings and opening the vector store."""
     load_settings()
@@ -186,13 +292,28 @@ def get_ready_retriever() -> Any:
     return build_retriever(vector_store)
 
 
-def prepare_answer_generation(question: str) -> dict[str, Any]:
+def prepare_answer_generation(
+    question: str,
+    chat_history: Optional[list[dict[str, str]]] = None,
+    rewriter_llm: Optional[Runnable[Any, Any]] = None,
+) -> dict[str, Any]:
     """Prepare retrieval results and prompt-ready inputs for answer generation."""
     clean_question = validate_question(question)
+    normalized_history = normalize_chat_history(chat_history)
+    standalone_question = rewrite_question(
+        clean_question,
+        normalized_history,
+        llm=rewriter_llm,
+    )
     retrieval_chain = build_retrieval_chain(get_ready_retriever())
 
     try:
-        prepared = retrieval_chain.invoke({"question": clean_question})
+        prepared = retrieval_chain.invoke(
+            {
+                "question": clean_question,
+                "standalone_question": standalone_question,
+            }
+        )
     except NETWORK_ERRORS:
         raise RuntimeError("Could not reach the OpenAI API while searching.")
 
@@ -202,6 +323,8 @@ def prepare_answer_generation(question: str) -> dict[str, Any]:
     if not search_results:
         return {
             "question": clean_question,
+            "standalone_question": standalone_question,
+            "chat_history": normalized_history,
             "search_results": [],
             "sources": [],
             "context": "",
@@ -209,15 +332,20 @@ def prepare_answer_generation(question: str) -> dict[str, Any]:
 
     return {
         "question": clean_question,
+        "standalone_question": standalone_question,
+        "chat_history": normalized_history,
         "search_results": search_results,
         "sources": sources,
         "context": prepared["context"],
     }
 
 
-def stream_answer_chunks(question: str) -> tuple[list[dict[str, Any]], Iterator[Any]]:
+def stream_answer_chunks(
+    question: str,
+    chat_history: Optional[list[dict[str, str]]] = None,
+) -> tuple[list[dict[str, Any]], Iterator[Any]]:
     """Return sources and a streaming iterator for the model answer."""
-    prepared = prepare_answer_generation(question)
+    prepared = prepare_answer_generation(question, chat_history=chat_history)
 
     if not prepared["search_results"]:
         return prepared["sources"], iter([ANSWER_NOT_FOUND])
@@ -252,9 +380,12 @@ def generate_answer_from_prepared(
     return answer
 
 
-def answer_question(question: str) -> dict[str, Any]:
+def answer_question(
+    question: str,
+    chat_history: Optional[list[dict[str, str]]] = None,
+) -> dict[str, Any]:
     """Run retrieval + generation and return answer data for CLI or API usage."""
-    prepared = prepare_answer_generation(question)
+    prepared = prepare_answer_generation(question, chat_history=chat_history)
 
     return {
         "answer": generate_answer_from_prepared(prepared),

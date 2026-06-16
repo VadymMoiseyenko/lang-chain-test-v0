@@ -6,15 +6,20 @@ from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
 from personal_docs_qa.api import app
-from personal_docs_qa.rag_indexing import split_into_chunks
+from personal_docs_qa.rag_indexing import create_embeddings, split_into_chunks
 from personal_docs_qa.services.qa_service import (
     ANSWER_NOT_FOUND,
     add_context_to_inputs,
     build_answer_prompt,
     build_generation_chain,
+    build_question_rewrite_prompt,
     build_retrieval_chain,
     build_sources,
+    format_chat_history,
+    normalize_chat_history,
     normalize_answer,
+    prepare_answer_generation,
+    rewrite_question,
 )
 from langchain_core.runnables import RunnableLambda
 
@@ -33,6 +38,14 @@ class MainFlowTests(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertEqual(chunks[0].metadata["chunk_index"], 1)
         self.assertIn("chunk_chars", chunks[0].metadata)
+
+    def test_create_embeddings_loads_local_settings_before_client_init(self) -> None:
+        with patch("personal_docs_qa.rag_indexing.load_settings") as mocked_load_settings:
+            with patch("personal_docs_qa.rag_indexing.OpenAIEmbeddings") as mocked_embeddings:
+                create_embeddings()
+
+        mocked_load_settings.assert_called_once_with()
+        mocked_embeddings.assert_called_once()
 
     def test_build_sources_returns_api_friendly_shape(self) -> None:
         results = [
@@ -92,6 +105,65 @@ class MainFlowTests(unittest.TestCase):
 
         self.assertEqual(answer, "Коротка відповідь")
 
+    def test_format_chat_history_returns_readable_dialogue(self) -> None:
+        chat_history = [
+            {"role": "user", "content": "Що таке MX-5 NA?"},
+            {"role": "assistant", "content": "Це перше покоління MX-5."},
+        ]
+
+        formatted_history = format_chat_history(chat_history)
+
+        self.assertIn("Користувач: Що таке MX-5 NA?", formatted_history)
+        self.assertIn("Бот: Це перше покоління MX-5.", formatted_history)
+
+    def test_normalize_chat_history_keeps_latest_non_empty_messages(self) -> None:
+        chat_history = [
+            {"role": "assistant", "content": "  "},
+            {"role": "user", "content": "Питання 1"},
+            {"role": "assistant", "content": "Відповідь 1"},
+            {"role": "user", "content": "Питання 2"},
+            {"role": "assistant", "content": "Відповідь 2"},
+            {"role": "user", "content": "Питання 3"},
+            {"role": "assistant", "content": "Відповідь 3"},
+            {"role": "user", "content": "Питання 4"},
+        ]
+
+        normalized_history = normalize_chat_history(chat_history)
+
+        self.assertEqual(len(normalized_history), 6)
+        self.assertEqual(normalized_history[0]["content"], "Відповідь 1")
+        self.assertEqual(normalized_history[-1]["content"], "Питання 4")
+
+    def test_normalize_chat_history_rejects_unknown_roles(self) -> None:
+        with self.assertRaises(ValueError):
+            normalize_chat_history([{"role": "system", "content": "Привіт"}])
+
+    def test_build_question_rewrite_prompt_contains_history_and_question(self) -> None:
+        prompt_value = build_question_rewrite_prompt().invoke(
+            {
+                "chat_history": "Користувач: Що таке MX-5 NA?",
+                "question": "А чим вона відрізняється від ND?",
+            }
+        )
+
+        prompt_text = prompt_value.to_string()
+        self.assertIn("Що таке MX-5 NA?", prompt_text)
+        self.assertIn("А чим вона відрізняється від ND?", prompt_text)
+
+    def test_rewrite_question_uses_history_to_make_follow_up_standalone(self) -> None:
+        fake_llm = RunnableLambda(lambda _: "Чим MX-5 NA відрізняється від ND?")
+
+        rewritten_question = rewrite_question(
+            "А чим вона відрізняється від ND?",
+            [
+                {"role": "user", "content": "Що таке MX-5 NA?"},
+                {"role": "assistant", "content": "MX-5 NA - перше покоління."},
+            ],
+            llm=fake_llm,
+        )
+
+        self.assertEqual(rewritten_question, "Чим MX-5 NA відрізняється від ND?")
+
     def test_build_retrieval_chain_adds_documents_and_context(self) -> None:
         fake_retriever = RunnableLambda(
             lambda question: [
@@ -103,10 +175,50 @@ class MainFlowTests(unittest.TestCase):
         )
         retrieval_chain = build_retrieval_chain(fake_retriever)
 
-        prepared = retrieval_chain.invoke({"question": "Що є в документах?"})
+        prepared = retrieval_chain.invoke(
+            {
+                "question": "А що там про нього?",
+                "standalone_question": "Що є в документах про MX-5 NA?",
+            }
+        )
 
         self.assertEqual(len(prepared["search_results"]), 1)
+        self.assertIn("MX-5 NA", prepared["search_results"][0].page_content)
         self.assertIn("docs/example.md", prepared["context"])
+
+    def test_prepare_answer_generation_uses_rewritten_question_for_retrieval(self) -> None:
+        fake_retriever = RunnableLambda(
+            lambda question: [
+                Document(
+                    page_content=f"Пошук спрацював для: {question}",
+                    metadata={"source": "docs/mazda-mx5-na.md", "chunk_index": 1},
+                )
+            ]
+        )
+
+        with patch(
+            "personal_docs_qa.services.qa_service.get_ready_retriever",
+            return_value=fake_retriever,
+        ):
+            prepared = prepare_answer_generation(
+                "А чим вона відрізняється від ND?",
+                chat_history=[
+                    {"role": "user", "content": "Що таке MX-5 NA?"},
+                    {"role": "assistant", "content": "MX-5 NA - перше покоління."},
+                ],
+                rewriter_llm=RunnableLambda(
+                    lambda _: "Чим MX-5 NA відрізняється від ND?"
+                ),
+            )
+
+        self.assertEqual(
+            prepared["standalone_question"],
+            "Чим MX-5 NA відрізняється від ND?",
+        )
+        self.assertIn(
+            "Чим MX-5 NA відрізняється від ND?",
+            prepared["context"],
+        )
 
 
 class ApiTests(unittest.TestCase):
@@ -146,6 +258,33 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(
             response.headers["access-control-allow-origin"],
             self.frontend_origin,
+        )
+
+    def test_ask_endpoint_forwards_chat_history(self) -> None:
+        fake_result = {
+            "answer": "Порівняння знайдено у документах.",
+            "sources": [],
+        }
+
+        with patch("personal_docs_qa.api.answer_question", return_value=fake_result) as mocked_answer:
+            response = self.client.post(
+                "/ask",
+                json={
+                    "question": "А чим вона відрізняється від ND?",
+                    "chat_history": [
+                        {"role": "user", "content": "Що таке MX-5 NA?"},
+                        {"role": "assistant", "content": "Це перше покоління MX-5."},
+                    ],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        mocked_answer.assert_called_once_with(
+            "А чим вона відрізняється від ND?",
+            chat_history=[
+                {"role": "user", "content": "Що таке MX-5 NA?"},
+                {"role": "assistant", "content": "Це перше покоління MX-5."},
+            ],
         )
 
     def test_ask_endpoint_rejects_empty_question(self) -> None:
@@ -194,6 +333,33 @@ class ApiTests(unittest.TestCase):
         self.assertIn(
             json.dumps({"content": "і другий."}, ensure_ascii=False),
             body,
+        )
+
+    def test_ask_stream_forwards_chat_history(self) -> None:
+        with patch(
+            "personal_docs_qa.api.stream_answer_chunks",
+            return_value=([], iter(["Готово"])),
+        ) as mocked_stream:
+            with self.client.stream(
+                "POST",
+                "/ask/stream",
+                json={
+                    "question": "А чим вона відрізняється від ND?",
+                    "chat_history": [
+                        {"role": "user", "content": "Що таке MX-5 NA?"},
+                        {"role": "assistant", "content": "Це перше покоління MX-5."},
+                    ],
+                },
+            ) as response:
+                _ = response.read().decode()
+
+        self.assertEqual(response.status_code, 200)
+        mocked_stream.assert_called_once_with(
+            "А чим вона відрізняється від ND?",
+            chat_history=[
+                {"role": "user", "content": "Що таке MX-5 NA?"},
+                {"role": "assistant", "content": "Це перше покоління MX-5."},
+            ],
         )
 
     def test_ask_stream_returns_error_event_when_stream_fails(self) -> None:

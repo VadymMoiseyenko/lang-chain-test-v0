@@ -11,6 +11,7 @@
 - читає `.md` і `.txt` файли з папки `docs/`
 - будує локальний Chroma index у `data/index/chroma/`
 - шукає релевантні фрагменти
+- переписує follow-up питання у standalone question перед retrieval
 - відповідає на питання через CLI, HTTP API або простий frontend chat
 - стрімить відповідь з backend у React frontend через `POST /ask/stream`
 
@@ -129,6 +130,8 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 
 - основний question-answering flow
 - валідація питання
+- проста chat history для follow-up питань
+- question rewriting перед retrieval
 - побудова prompt
 - orchestration між retrieval і LLM answer generation
 
@@ -163,6 +166,19 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - `make index-demo`, `make ask`, `make eval` і `make api` потребують валідний `OPENAI_API_KEY`
 - для побудови індексу та answer generation потрібен інтернет-доступ до OpenAI API
 - `.env`, `frontend/.env`, `data/index/` і `frontend/node_modules/` не мають потрапляти в git
+
+## Conversational RAG
+
+Звичайний RAG часто погано працює з follow-up питаннями на кшталт `А чим вона відрізняється від ND?`, бо retriever бачить тільки поточний текст питання і не знає, що `вона` означає `MX-5 NA`.
+
+У цьому проєкті ми використовуємо простий beginner-friendly підхід:
+
+1. Беремо поточне питання і кілька останніх повідомлень чату
+2. Просимо модель переписати follow-up у standalone question для retrieval
+3. Шукаємо документи вже за переписаним питанням
+4. Генеруємо відповідь тільки з retrieved context
+
+Важлива межа: історія чату допомагає лише краще шукати документи. Вона не є джерелом фактів для фінальної відповіді.
 
 ## RAG Eval
 

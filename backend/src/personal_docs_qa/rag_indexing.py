@@ -16,7 +16,12 @@ from langchain_openai import OpenAIEmbeddings
 from openai import APIConnectionError
 from requests.exceptions import ConnectionError as RequestsConnectionError
 
-from personal_docs_qa.config import DOCS_DIR, INDEX_DIR, get_embedding_model_name
+from personal_docs_qa.config import (
+    DOCS_DIR,
+    INDEX_DIR,
+    get_embedding_model_name,
+    load_settings,
+)
 from personal_docs_qa.load_local_docs import load_text_files
 
 
@@ -50,6 +55,7 @@ def split_into_chunks(
 
 def create_embeddings() -> OpenAIEmbeddings:
     """Create the embeddings model used for vector search."""
+    load_settings()
     return OpenAIEmbeddings(model=get_embedding_model_name())
 
 
