@@ -82,6 +82,21 @@ make frontend-dev
 make frontend-build
 ```
 
+## GitHub Actions CI
+
+Workflow лежить у [`.github/workflows/ci.yml`](/Users/vadym_moiseyenko/Documents/LangChain/.github/workflows/ci.yml) і запускається:
+
+- на кожен `pull_request`
+- на `push` у `main`
+
+CI зараз має три окремі jobs:
+
+- `backend-tests`: піднімає Python `3.11`, встановлює залежності з `backend/requirements.txt` і запускає `make test`
+- `frontend-build`: піднімає Node `20`, виконує `npm ci` у `frontend/` і перевіряє production build через `npm run build`
+- `secret-scan`: шукає в репозиторії рядки, схожі на реальні OpenAI ключі `sk-...`, але не падає через безпечні документаційні згадки на кшталт `OPENAI_API_KEY`
+
+CI навмисно не запускає `make eval`, `make ask` або `make index-demo`, бо ці команди залежать від реального OpenAI API key і мережевих викликів.
+
 Або напряму:
 
 ```bash
@@ -122,39 +137,62 @@ Frontend:
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-## Deploy API Demo On Render
+## Deploy Backend On Render
 
-Найпростіший demo-hosting для FastAPI backend: [Render Web Service](https://render.com/docs/deploy-fastapi). Він дає публічний `onrender.com` URL, вміє запускати Python web service через `uvicorn`, має environment variables/secrets і може автоматично деплоїти після push у підключену git branch.
+У цьому milestone деплоїмо тільки backend. Основний шлях: [Render Blueprint](https://render.com/docs/blueprint-spec), тобто Render читає `render.yaml` з репозиторію і сам створює service з потрібними командами та environment variables.
 
-У репозиторії є `render.yaml`, який описує API service:
+У репозиторії є `render.yaml`, який описує backend service:
 
 ```yaml
 buildCommand: pip install -r backend/requirements.txt
 startCommand: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
 healthCheckPath: /health
-autoDeployTrigger: commit
+autoDeployTrigger: checksPass
 ```
 
 Що важливо:
 
+- service name: `personal-docs-qa-api`
 - `OPENAI_API_KEY` не зберігається в git. У `render.yaml` він позначений як `sync: false`, тому Render попросить ввести значення в dashboard.
-- `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити як default demo values.
+- `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити як public default values.
 - `data/index/` не комітиться. На hosting index буде створюватися заново під час startup command.
+- deploy hooks тут не використовуються. Rebuild index виконується прямо в `startCommand`.
 
-Кроки:
+### Blueprint Setup
 
 1. Запуш репозиторій у GitHub/GitLab/Bitbucket.
-2. У Render створи новий Blueprint або Web Service з цього repo.
-3. Якщо використовуєш Blueprint, Render прочитає `render.yaml`. Якщо створюєш service вручну, вистав:
+2. У Render Dashboard натисни `New +` -> `Blueprint`.
+3. Підключи свій repo і вибери цей репозиторій.
+4. Render покаже preview сервісу з `render.yaml`. Переконайся, що бачиш `personal-docs-qa-api`.
+5. Під час створення Blueprint додай secret:
+
+```env
+OPENAI_API_KEY=your_real_key
+```
+
+6. `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити без змін, бо Blueprint уже задає default values.
+7. Створи Blueprint і дочекайся першого deploy.
+
+Після deploy відкрий:
+
+```text
+https://your-service-name.onrender.com/health
+https://your-service-name.onrender.com/docs
+```
+
+### Manual Web Service Fallback
+
+Якщо Blueprint з якоїсь причини не підходить, можна створити звичайний Web Service вручну. Вистав:
 
 ```text
 Language: Python
 Build Command: pip install -r backend/requirements.txt
 Start Command: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
 Health Check Path: /health
+Auto-Deploy: After CI checks pass
 ```
 
-4. У Render Environment додай secret/env var:
+Потім у `Environment` додай:
 
 ```env
 OPENAI_API_KEY=your_real_key
@@ -162,14 +200,7 @@ OPENAI_MODEL=gpt-4.1-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-5. Після deploy відкрий:
-
-```text
-https://your-service-name.onrender.com/health
-https://your-service-name.onrender.com/docs
-```
-
-6. Перевір API:
+Після deploy перевір API:
 
 ```bash
 curl -X POST "https://your-service-name.onrender.com/ask" \
@@ -201,12 +232,14 @@ PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing
 
 ### Auto Deploy Check
 
-За замовчуванням Render може запускати deploy після кожного push/merge у підключену branch. Щоб перевірити auto deploy:
+У `render.yaml` виставлено `autoDeployTrigger: checksPass`. Це означає: Render має чекати, поки CI checks для commit пройдуть успішно, і лише після цього запускати deploy.
+
+Щоб перевірити auto deploy:
 
 1. Зроби маленьку зміну в README або коді.
 2. Запусти локально `make test`.
 3. Закоміть і запуш у branch, яку підключив Render.
-4. У Render відкрий service -> Events або Deploys і переконайся, що з'явився новий deploy для останнього commit.
+4. У Render відкрий service -> `Events` або `Deploys` і переконайся, що з'явився новий deploy для останнього commit після успішних checks.
 5. Після завершення deploy перевір:
 
 ```bash

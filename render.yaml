@@ -6,7 +6,7 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    autoDeployTrigger: checksPass
     envVars:
       - key: OPENAI_API_KEY
         sync: false
