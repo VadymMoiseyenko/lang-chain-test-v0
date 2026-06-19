@@ -344,6 +344,12 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("running", response.json()["message"])
 
+    def test_health_endpoint_returns_ok_without_touching_openai(self) -> None:
+        response = self.client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
     def test_ask_endpoint_returns_mocked_answer(self) -> None:
         fake_result = {
             "answer": "Знайшов відповідь у документах.",

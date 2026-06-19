@@ -102,6 +102,10 @@ cd frontend && npm run build
 
 - [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
+Health endpoint для локальної перевірки й hosting health checks:
+
+- [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+
 ## Environment Variables
 
 Backend:
@@ -116,6 +120,100 @@ Frontend:
 
 ```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+## Deploy API Demo On Render
+
+Найпростіший demo-hosting для FastAPI backend: [Render Web Service](https://render.com/docs/deploy-fastapi). Він дає публічний `onrender.com` URL, вміє запускати Python web service через `uvicorn`, має environment variables/secrets і може автоматично деплоїти після push у підключену git branch.
+
+У репозиторії є `render.yaml`, який описує API service:
+
+```yaml
+buildCommand: pip install -r backend/requirements.txt
+startCommand: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
+healthCheckPath: /health
+autoDeployTrigger: commit
+```
+
+Що важливо:
+
+- `OPENAI_API_KEY` не зберігається в git. У `render.yaml` він позначений як `sync: false`, тому Render попросить ввести значення в dashboard.
+- `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити як default demo values.
+- `data/index/` не комітиться. На hosting index буде створюватися заново під час startup command.
+
+Кроки:
+
+1. Запуш репозиторій у GitHub/GitLab/Bitbucket.
+2. У Render створи новий Blueprint або Web Service з цього repo.
+3. Якщо використовуєш Blueprint, Render прочитає `render.yaml`. Якщо створюєш service вручну, вистав:
+
+```text
+Language: Python
+Build Command: pip install -r backend/requirements.txt
+Start Command: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
+Health Check Path: /health
+```
+
+4. У Render Environment додай secret/env var:
+
+```env
+OPENAI_API_KEY=your_real_key
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+5. Після deploy відкрий:
+
+```text
+https://your-service-name.onrender.com/health
+https://your-service-name.onrender.com/docs
+```
+
+6. Перевір API:
+
+```bash
+curl -X POST "https://your-service-name.onrender.com/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Яка різниця між MX-5 NA і ND?"}'
+```
+
+### Chroma Index On Hosting
+
+Локально Chroma index лежить у `data/index/chroma/`, а ingestion manifest у `data/index/ingestion_manifest.json`. Ця папка згенерована і не має потрапляти в git.
+
+На багатьох hosting-платформах filesystem є ephemeral: файли, створені під час роботи сервісу, можуть зникати після redeploy або restart. Це означає, що локальний `data/index/` не можна сприймати як production database.
+
+Для demo ми обрали простий підхід: rebuild index під час startup. Render start command спочатку запускає:
+
+```bash
+PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing
+```
+
+а потім стартує `uvicorn`. Це добре для маленької demo-бази документів, але має компроміс: deploy/startup потребує `OPENAI_API_KEY`, network access до OpenAI embeddings API і кілька додаткових секунд.
+
+Якщо платформа підтримує persistent volume/disk, можна зберігати `data/index/` на ньому. Для Render persistent disk потрібно монтувати шлях, який покриває generated index, наприклад:
+
+```text
+/opt/render/project/src/data
+```
+
+Тоді Chroma index і manifest збережуться між restart/deploy, а startup зможе перевикористати index, якщо документи не змінилися.
+
+### Auto Deploy Check
+
+За замовчуванням Render може запускати deploy після кожного push/merge у підключену branch. Щоб перевірити auto deploy:
+
+1. Зроби маленьку зміну в README або коді.
+2. Запусти локально `make test`.
+3. Закоміть і запуш у branch, яку підключив Render.
+4. У Render відкрий service -> Events або Deploys і переконайся, що з'явився новий deploy для останнього commit.
+5. Після завершення deploy перевір:
+
+```bash
+curl "https://your-service-name.onrender.com/health"
+curl -X POST "https://your-service-name.onrender.com/ask" \
+  -H "Content-Type: application/json" \
+  -d '{"question":"Яка різниця між MX-5 NA і ND?"}'
 ```
 
 ## Layer Boundaries
