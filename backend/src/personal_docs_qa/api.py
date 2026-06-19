@@ -62,6 +62,11 @@ def read_root() -> dict[str, str]:
     }
 
 
+@app.get("/health")
+def health_check() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest) -> AskResponse:
     try:

@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Personal Docs Q&A Bot - Flow Guide</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1d2430;
+        --muted: #5d6673;
+        --line: #d7dde5;
+        --paper: #ffffff;
+        --wash: #f6f7f9;
+        --blue: #2563eb;
+        --green: #11845b;
+        --amber: #b86e00;
+        --rose: #b42318;
+        --violet: #6d5bd0;
+        --shadow: 0 14px 35px rgba(29, 36, 48, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--wash);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .page {
+        min-height: 100vh;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(12px);
+      }
+
+      .topbar__inner {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 14px 0;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 220px;
+        font-weight: 760;
+      }
+
+      .brand__mark {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        color: #ffffff;
+        background: var(--ink);
+        border-radius: 8px;
+        font-size: 14px;
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .nav a {
+        padding: 7px 10px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 14px;
+        text-decoration: none;
+      }
+
+      .nav a:hover {
+        border-color: var(--line);
+        color: var(--ink);
+        background: #ffffff;
+      }
+
+      .hero {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 56px 0 32px;
+      }
+
+      .hero__grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+        align-items: center;
+        gap: 32px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: var(--blue);
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin-bottom: 16px;
+        font-size: clamp(36px, 6vw, 74px);
+        line-height: 0.98;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        font-size: clamp(26px, 3vw, 38px);
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 720px;
+        margin-bottom: 24px;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .hero__facts {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        max-width: 760px;
+      }
+
+      .fact {
+        min-height: 86px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .fact strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 18px;
+      }
+
+      .fact span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .system-map {
+        position: relative;
+        min-height: 392px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .system-map::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(var(--line) 1px, transparent 1px),
+          linear-gradient(90deg, var(--line) 1px, transparent 1px);
+        background-size: 34px 34px;
+        opacity: 0.35;
+      }
+
+      .system-map__row {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        grid-template-columns: 1fr 36px 1fr;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .system-map__row:last-child {
+        margin-bottom: 0;
+      }
+
+      .mini-node {
+        min-height: 82px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-left: 5px solid var(--blue);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.94);
+      }
+
+      .mini-node--green {
+        border-left-color: var(--green);
+      }
+
+      .mini-node--amber {
+        border-left-color: var(--amber);
+      }
+
+      .mini-node--violet {
+        border-left-color: var(--violet);
+      }
+
+      .mini-node--rose {
+        border-left-color: var(--rose);
+      }
+
+      .mini-node b {
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .mini-node small {
+        color: var(--muted);
+      }
+
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        font-weight: 800;
+      }
+
+      .section {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 42px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .section__intro {
+        max-width: 840px;
+        margin-bottom: 22px;
+        color: var(--muted);
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 18px;
+      }
+
+      .three-col {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .panel {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .panel p:last-child,
+      .panel ul:last-child,
+      .panel ol:last-child {
+        margin-bottom: 0;
+      }
+
+      .tagline {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        margin-bottom: 12px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        color: var(--muted);
+        background: #eef1f5;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .tree {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 14px;
+      }
+
+      .tree li {
+        position: relative;
+        padding: 8px 0 8px 26px;
+        border-left: 1px solid var(--line);
+      }
+
+      .tree li::before {
+        content: "";
+        position: absolute;
+        top: 20px;
+        left: 0;
+        width: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .tree strong {
+        color: var(--ink);
+      }
+
+      .tree span {
+        color: var(--muted);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      .flow {
+        display: grid;
+        gap: 12px;
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 54px minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .flow-step__num {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: #ffffff;
+        background: var(--ink);
+        font-weight: 800;
+      }
+
+      .flow-step p {
+        margin-bottom: 0;
+        color: var(--muted);
+      }
+
+      .pipeline {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(120px, 1fr));
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .pipe-node {
+        min-height: 142px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-top: 5px solid var(--blue);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .pipe-node:nth-child(2) {
+        border-top-color: var(--green);
+      }
+
+      .pipe-node:nth-child(3) {
+        border-top-color: var(--amber);
+      }
+
+      .pipe-node:nth-child(4) {
+        border-top-color: var(--violet);
+      }
+
+      .pipe-node:nth-child(5) {
+        border-top-color: var(--rose);
+      }
+
+      .pipe-node small {
+        color: var(--muted);
+      }
+
+      .code {
+        margin: 0;
+        padding: 14px;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #111827;
+        color: #e5e7eb;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .concept-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .concept {
+        min-height: 160px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      .concept__icon {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 12px;
+        border-radius: 8px;
+        color: #ffffff;
+        background: var(--blue);
+        font-weight: 800;
+      }
+
+      .concept:nth-child(2) .concept__icon {
+        background: var(--green);
+      }
+
+      .concept:nth-child(3) .concept__icon {
+        background: var(--amber);
+      }
+
+      .concept:nth-child(4) .concept__icon {
+        background: var(--violet);
+      }
+
+      .concept p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 760px;
+      }
+
+      th,
+      td {
+        padding: 13px 14px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        background: #f0f2f5;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #eef1f5;
+        color: #111827;
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 0.92em;
+      }
+
+      .note {
+        padding: 16px;
+        border-left: 5px solid var(--amber);
+        border-radius: 8px;
+        background: #fff8eb;
+      }
+
+      .note p {
+        margin-bottom: 0;
+      }
+
+      .footer {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        font-size: 14px;
+      }
+
+      @media (max-width: 920px) {
+        .topbar__inner,
+        .hero__grid,
+        .two-col,
+        .three-col,
+        .concept-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .topbar__inner {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .nav {
+          justify-content: flex-start;
+        }
+
+        .hero {
+          padding-top: 36px;
+        }
+
+        .hero__facts {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .topbar__inner,
+        .hero,
+        .section,
+        .footer {
+          width: min(100% - 24px, 1180px);
+        }
+
+        h1 {
+          font-size: 40px;
+        }
+
+        .system-map {
+          padding: 14px;
+        }
+
+        .system-map__row {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          min-height: 20px;
+          transform: rotate(90deg);
+        }
+
+        .flow-step {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header class="topbar">
+        <div class="topbar__inner">
+          <a class="brand" href="#overview" aria-label="На початок">
+            <span class="brand__mark">RAG</span>
+            <span>Personal Docs Q&A Bot</span>
+          </a>
+          <nav class="nav" aria-label="Навігація по документу">
+            <a href="#structure">Структура</a>
+            <a href="#ingestion">Ingestion</a>
+            <a href="#answer-flow">Answer flow</a>
+            <a href="#api-frontend">API + UI</a>
+            <a href="#testing">Тести</a>
+            <a href="#commands">Команди</a>
+          </nav>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero" id="overview">
+          <div class="hero__grid">
+            <div>
+              <p class="eyebrow">Навчальна карта проєкту</p>
+              <h1>Як локальні документи стають відповіддю бота</h1>
+              <p class="lead">
+                Це візуальний робочий документ для monorepo з Python backend,
+                LangChain RAG, Chroma index, FastAPI API та React/Vite chat UI.
+                Мета проста: швидко побачити, де лежить кожен важливий шматок і
+                як питання проходить через систему.
+              </p>
+              <div class="hero__facts" aria-label="Короткі факти">
+                <div class="fact">
+                  <strong>5</strong>
+                  <span>локальних документів у <code>docs/</code></span>
+                </div>
+                <div class="fact">
+                  <strong>2</strong>
+                  <span>шляхи користувача: CLI та web chat</span>
+                </div>
+                <div class="fact">
+                  <strong>1</strong>
+                  <span>спільний QA service для API і CLI</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="system-map" aria-label="Візуальна карта системи">
+              <div class="system-map__row">
+                <div class="mini-node mini-node--green">
+                  <b>Source docs</b>
+                  <small><code>docs/*.md</code>, <code>docs/*.txt</code></small>
+                </div>
+                <div class="arrow">→</div>
+                <div class="mini-node">
+                  <b>Loader</b>
+                  <small>читає текст і додає metadata</small>
+                </div>
+              </div>
+              <div class="system-map__row">
+                <div class="mini-node mini-node--amber">
+                  <b>Chunking + embeddings</b>
+                  <small>текст ріжеться і векторизується</small>
+                </div>
+                <div class="arrow">→</div>
+                <div class="mini-node mini-node--violet">
+                  <b>Chroma</b>
+                  <small>локальний vector store у <code>data/index/</code></small>
+                </div>
+              </div>
+              <div class="system-map__row">
+                <div class="mini-node mini-node--rose">
+                  <b>Retriever</b>
+                  <small>дістає релевантні fragments</small>
+                </div>
+                <div class="arrow">→</div>
+                <div class="mini-node">
+                  <b>Answer</b>
+                  <small>OpenAI chat model відповідає тільки з context</small>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="structure">
+          <p class="eyebrow">01 / Repository map</p>
+          <h2>Файли розділені за відповідальністю</h2>
+          <p class="section__intro">
+            Проєкт зараз є простим monorepo: backend і frontend живуть окремо,
+            а кореневий <code>Makefile</code> дає короткі команди для запуску.
+          </p>
+
+          <div class="two-col">
+            <div class="panel">
+              <span class="tagline">Дерево проєкту</span>
+              <ul class="tree">
+                <li><strong>docs/</strong> <span>джерела знань для RAG</span></li>
+                <li><strong>backend/src/personal_docs_qa/</strong> <span>Python застосунок</span></li>
+                <li><strong>backend/tests/</strong> <span>unit tests без реальних OpenAI викликів</span></li>
+                <li><strong>backend/eval_cases.json</strong> <span>ручні RAG quality сценарії</span></li>
+                <li><strong>data/index/</strong> <span>згенерований Chroma index і manifest</span></li>
+                <li><strong>frontend/src/</strong> <span>React chat UI</span></li>
+                <li><strong>Makefile</strong> <span>команди для backend, eval і frontend</span></li>
+              </ul>
+            </div>
+
+            <div class="panel">
+              <span class="tagline">Головні модулі backend</span>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Файл</th>
+                      <th>Роль</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><code>config.py</code></td>
+                      <td>шляхи до проєкту, <code>docs/</code>, <code>data/index/</code>, env settings</td>
+                    </tr>
+                    <tr>
+                      <td><code>load_local_docs.py</code></td>
+                      <td>читає <code>.md</code>/<code>.txt</code> і створює LangChain <code>Document</code></td>
+                    </tr>
+                    <tr>
+                      <td><code>rag_indexing.py</code></td>
+                      <td>chunking, embeddings, manifest, Chroma rebuild/reuse</td>
+                    </tr>
+                    <tr>
+                      <td><code>services/qa_service.py</code></td>
+                      <td>основна логіка питання, retrieval, prompt, answer, sources</td>
+                    </tr>
+                    <tr>
+                      <td><code>api.py</code></td>
+                      <td>FastAPI routes, schemas, CORS, SSE streaming</td>
+                    </tr>
+                    <tr>
+                      <td><code>main.py</code></td>
+                      <td>CLI: одноразове питання або chat session у терміналі</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="ingestion">
+          <p class="eyebrow">02 / Ingestion</p>
+          <h2>Як документи потрапляють у Chroma</h2>
+          <p class="section__intro">
+            Ingestion - це підготовка знань для пошуку. Тут сирі файли стають
+            маленькими chunks із metadata, embeddings і стабільними chunk ids.
+          </p>
+
+          <div class="pipeline" aria-label="Ingestion pipeline">
+            <div class="pipe-node">
+              <b>1. Read files</b>
+              <small><code>load_text_files(DOCS_DIR)</code> читає тільки <code>.md</code> і <code>.txt</code>.</small>
+            </div>
+            <div class="pipe-node">
+              <b>2. Metadata</b>
+              <small>source, file name, type, length, checksum, modified time.</small>
+            </div>
+            <div class="pipe-node">
+              <b>3. Plan</b>
+              <small>manifest порівнюється з поточними файлами: added, changed, deleted.</small>
+            </div>
+            <div class="pipe-node">
+              <b>4. Split</b>
+              <small><code>RecursiveCharacterTextSplitter</code>: 300 chars, 60 overlap.</small>
+            </div>
+            <div class="pipe-node">
+              <b>5. Embed</b>
+              <small><code>OpenAIEmbeddings</code> створює vectors для кожного chunk.</small>
+            </div>
+            <div class="pipe-node">
+              <b>6. Persist</b>
+              <small>Chroma index і <code>ingestion_manifest.json</code> зберігаються локально.</small>
+            </div>
+          </div>
+
+          <div class="two-col" style="margin-top: 18px">
+            <div class="panel">
+              <h3>Коли index перевикористовується</h3>
+              <p>
+                Якщо <code>data/index/chroma/</code> існує, manifest існує, і
+                plan каже <code>needs_rebuild = false</code>, код відкриває
+                готовий Chroma index замість нового rebuild.
+              </p>
+            </div>
+            <div class="panel">
+              <h3>Коли index перебудовується</h3>
+              <p>
+                Якщо файл додали, змінили або видалили, система заново ріже всі
+                документи на chunks, перераховує embeddings і записує новий
+                manifest. Це простіше, ніж partial update, і добре для MVP.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="answer-flow">
+          <p class="eyebrow">03 / Question answering</p>
+          <h2>Шлях одного питання через RAG</h2>
+          <p class="section__intro">
+            І CLI, і API зрештою приходять у <code>answer_question()</code>.
+            Тому важливо розуміти саме service layer у
+            <code>qa_service.py</code>.
+          </p>
+
+          <div class="flow" aria-label="Answer flow">
+            <article class="flow-step">
+              <div class="flow-step__num">1</div>
+              <div>
+                <h3>Validate input</h3>
+                <p><code>validate_question()</code> прибирає пробіли і відкидає порожнє питання.</p>
+              </div>
+            </article>
+            <article class="flow-step">
+              <div class="flow-step__num">2</div>
+              <div>
+                <h3>Normalize chat history</h3>
+                <p>Беруться тільки ролі <code>user</code>/<code>assistant</code>, максимум 6 останніх змістовних повідомлень.</p>
+              </div>
+            </article>
+            <article class="flow-step">
+              <div class="flow-step__num">3</div>
+              <div>
+                <h3>Rewrite follow-up question</h3>
+                <p>Якщо є історія, модель переписує питання в standalone form, наприклад “А чим вона відрізняється від ND?” → “Чим MX-5 NA відрізняється від ND?”.</p>
+              </div>
+            </article>
+            <article class="flow-step">
+              <div class="flow-step__num">4</div>
+              <div>
+                <h3>Retrieve context</h3>
+                <p>Retriever шукає top-k chunks у Chroma. <code>get_search_k()</code> не просить більше chunks, ніж реально є в collection.</p>
+              </div>
+            </article>
+            <article class="flow-step">
+              <div class="flow-step__num">5</div>
+              <div>
+                <h3>Format context and sources</h3>
+                <p><code>format_context()</code> збирає fragments для prompt, а <code>build_sources()</code> готує список джерел для UI/API.</p>
+              </div>
+            </article>
+            <article class="flow-step">
+              <div class="flow-step__num">6</div>
+              <div>
+                <h3>Generate answer</h3>
+                <p>Prompt змушує відповідати українською тільки з retrieved context. Якщо контекст не містить відповіді, очікувана фраза: <code>Я не знайшов цього в документах</code>.</p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="api-frontend">
+          <p class="eyebrow">04 / API and frontend</p>
+          <h2>FastAPI тонкий, React показує stream</h2>
+          <p class="section__intro">
+            HTTP layer майже не містить бізнес-логіки. Він приймає запит,
+            викликає service layer і повертає або JSON, або Server-Sent Events
+            для поступового виводу відповіді.
+          </p>
+
+          <div class="three-col">
+            <div class="panel">
+              <h3><code>POST /ask</code></h3>
+              <p>Синхронний endpoint. Повертає повну відповідь і sources одним JSON response.</p>
+            </div>
+            <div class="panel">
+              <h3><code>POST /ask/stream</code></h3>
+              <p>Streaming endpoint. Спочатку надсилає sources, потім <code>answer_chunk</code>, в кінці <code>done</code>.</p>
+            </div>
+            <div class="panel">
+              <h3>React chat</h3>
+              <p><code>App.jsx</code> читає SSE stream через <code>response.body.getReader()</code> і дописує текст бота chunk за chunk.</p>
+            </div>
+          </div>
+
+          <div class="note" style="margin-top: 18px">
+            <p>
+              Важлива межа: frontend не знає LangChain. Він лише збирає
+              <code>question</code> і <code>chat_history</code>, показує
+              повідомлення та sources. Уся RAG-логіка залишається в backend.
+            </p>
+          </div>
+        </section>
+
+        <section class="section" id="concepts">
+          <p class="eyebrow">05 / Learning checkpoints</p>
+          <h2>Що варто зрозуміти під час вивчення</h2>
+
+          <div class="concept-grid">
+            <div class="concept">
+              <div class="concept__icon">D</div>
+              <h3>Document</h3>
+              <p>LangChain <code>Document</code> має текст у <code>page_content</code> і службову інформацію в <code>metadata</code>.</p>
+            </div>
+            <div class="concept">
+              <div class="concept__icon">C</div>
+              <h3>Chunk</h3>
+              <p>Малий фрагмент документа. Overlap допомагає не втрачати сенс на межі двох шматків.</p>
+            </div>
+            <div class="concept">
+              <div class="concept__icon">V</div>
+              <h3>Vector store</h3>
+              <p>Chroma зберігає embeddings і дозволяє знайти фрагменти, схожі на питання.</p>
+            </div>
+            <div class="concept">
+              <div class="concept__icon">P</div>
+              <h3>Prompt boundary</h3>
+              <p>Фінальна відповідь має опиратися тільки на context. Це головний захист від вигаданих фактів.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="testing">
+          <p class="eyebrow">06 / Tests and eval</p>
+          <h2>Що перевіряється автоматично</h2>
+          <p class="section__intro">
+            Unit tests тут спеціально мережево-незалежні: вони мокають OpenAI і
+            перевіряють маленькі функції. RAG eval окремий, бо він уже залежить
+            від реального індексу, моделі та мережі.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Шар</th>
+                  <th>Що покриває</th>
+                  <th>Команда</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Loader tests</td>
+                  <td>читання тільки <code>.md</code>/<code>.txt</code>, metadata, preview</td>
+                  <td><code>make test</code></td>
+                </tr>
+                <tr>
+                  <td>RAG helper tests</td>
+                  <td>chunk metadata, manifest, ingestion plan, prompts, chat history</td>
+                  <td><code>make test</code></td>
+                </tr>
+                <tr>
+                  <td>API tests</td>
+                  <td><code>/ask</code>, <code>/ask/stream</code>, CORS, SSE events</td>
+                  <td><code>make test</code></td>
+                </tr>
+                <tr>
+                  <td>RAG eval</td>
+                  <td>expected sources, must-include phrases, fallback answer</td>
+                  <td><code>make eval</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="commands">
+          <p class="eyebrow">07 / Practical commands</p>
+          <h2>Команди, які найчастіше потрібні</h2>
+
+          <div class="two-col">
+            <div>
+              <h3>Backend</h3>
+              <pre class="code"><code>make install
+make test
+make load-docs
+make index-demo
+make ask QUESTION="Яка різниця між MX-5 NA і ND?"
+make api</code></pre>
+            </div>
+            <div>
+              <h3>Frontend</h3>
+              <pre class="code"><code>make frontend-install
+make frontend-dev
+make frontend-build</code></pre>
+            </div>
+          </div>
+
+          <div class="note" style="margin-top: 18px">
+            <p>
+              <code>make test</code> не потребує OpenAI API. А
+              <code>make index-demo</code>, <code>make ask</code>,
+              <code>make eval</code> і <code>make api</code> потребують
+              коректний <code>OPENAI_API_KEY</code> у кореневому
+              <code>.env</code>.
+            </p>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        Оновлено як навчальна візуальна карта поточного стану репозиторію.
+        Згенеровані індекси, <code>.env</code>, <code>.venv</code>,
+        <code>node_modules</code> і build artifacts не мають потрапляти в git.
+      </footer>
+    </div>
+  </body>
+</html>
