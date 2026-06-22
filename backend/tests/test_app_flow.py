@@ -4,6 +4,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
+from requests.exceptions import ConnectionError as RequestsConnectionError
 
 from personal_docs_qa.api import app
 from personal_docs_qa.rag_indexing import (
@@ -12,6 +13,7 @@ from personal_docs_qa.rag_indexing import (
     create_embeddings,
     describe_ingestion_plan,
     split_into_chunks,
+    sync_vector_store_with_retry,
 )
 from personal_docs_qa.services.qa_service import (
     ANSWER_NOT_FOUND,
@@ -157,6 +159,26 @@ class MainFlowTests(unittest.TestCase):
 
         mocked_load_settings.assert_called_once_with()
         mocked_embeddings.assert_called_once()
+
+    def test_index_startup_retries_temporary_connection_errors(self) -> None:
+        expected_result = (object(), {"needs_rebuild": True}, "rebuilt")
+
+        with patch(
+            "personal_docs_qa.rag_indexing.sync_vector_store_with_docs",
+            side_effect=[
+                RequestsConnectionError("temporary failure"),
+                expected_result,
+            ],
+        ) as mocked_sync:
+            with patch("personal_docs_qa.rag_indexing.time.sleep") as mocked_sleep:
+                result = sync_vector_store_with_retry(
+                    max_attempts=3,
+                    initial_delay_seconds=5,
+                )
+
+        self.assertEqual(result, expected_result)
+        self.assertEqual(mocked_sync.call_count, 2)
+        mocked_sleep.assert_called_once_with(5)
 
     def test_build_sources_returns_api_friendly_shape(self) -> None:
         results = [

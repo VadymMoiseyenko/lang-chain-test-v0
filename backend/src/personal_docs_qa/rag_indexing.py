@@ -1,5 +1,6 @@
 import json
 import shutil
+import time
 import warnings
 from collections import Counter
 from pathlib import Path
@@ -257,6 +258,33 @@ def sync_vector_store_with_docs(
     return vector_store, plan, "rebuilt"
 
 
+def sync_vector_store_with_retry(
+    max_attempts: int = 3,
+    initial_delay_seconds: float = 5.0,
+) -> Tuple[Chroma, dict[str, object], str]:
+    """Retry index startup when OpenAI is temporarily unreachable."""
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return sync_vector_store_with_docs()
+        except NETWORK_ERRORS:
+            if attempt == max_attempts:
+                raise
+
+            delay_seconds = initial_delay_seconds * attempt
+            print(
+                "OpenAI connection failed while building the index "
+                f"(attempt {attempt}/{max_attempts}). "
+                f"Retrying in {delay_seconds:g} seconds...",
+                flush=True,
+            )
+            time.sleep(delay_seconds)
+
+    raise RuntimeError("Index retry loop ended unexpectedly")
+
+
 def ensure_vector_store(persist_directory: Path = CHROMA_DIR) -> Chroma:
     """Reuse the local index when possible, or sync it with docs when needed."""
     vector_store, _, _ = sync_vector_store_with_docs(persist_directory)
@@ -265,7 +293,7 @@ def ensure_vector_store(persist_directory: Path = CHROMA_DIR) -> Chroma:
 
 def main() -> None:
     """Build the local vector store and print a small status message."""
-    vector_store, plan, action = sync_vector_store_with_docs()
+    vector_store, plan, action = sync_vector_store_with_retry()
     collection = getattr(vector_store, "_collection", None)
     chunk_count = collection.count() if collection is not None else "unknown"
     print(describe_ingestion_plan(plan))

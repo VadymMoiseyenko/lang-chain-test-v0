@@ -148,15 +148,20 @@ buildCommand: pip install -r backend/requirements.txt
 startCommand: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
 healthCheckPath: /health
 autoDeployTrigger: checksPass
+envVars:
+  - key: PYTHON_VERSION
+    value: 3.12.12
 ```
 
 Що важливо:
 
 - service name: `personal-docs-qa-api`
+- Python зафіксований на `3.12.12`, щоб Render не перемикав service на нову default major/minor версію автоматично.
 - `OPENAI_API_KEY` не зберігається в git. У `render.yaml` він позначений як `sync: false`, тому Render попросить ввести значення в dashboard.
 - `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити як public default values.
 - `data/index/` не комітиться. На hosting index буде створюватися заново під час startup command.
 - deploy hooks тут не використовуються. Rebuild index виконується прямо в `startCommand`.
+- Якщо OpenAI тимчасово недоступний, startup indexing повторює з'єднання до трьох разів з короткими паузами.
 
 ### Blueprint Setup
 
@@ -190,6 +195,7 @@ Build Command: pip install -r backend/requirements.txt
 Start Command: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
 Health Check Path: /health
 Auto-Deploy: After CI checks pass
+PYTHON_VERSION: 3.12.12
 ```
 
 Потім у `Environment` додай:

@@ -8,6 +8,8 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
