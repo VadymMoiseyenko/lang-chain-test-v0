@@ -16,3 +16,19 @@ services:
         value: gpt-4.1-mini
       - key: OPENAI_EMBEDDING_MODEL
         value: text-embedding-3-small
+      - key: ALLOWED_FRONTEND_ORIGINS
+        value: https://personal-docs-qa-frontend.onrender.com
+  - type: web
+    name: personal-docs-qa-frontend
+    runtime: static
+    renderSubdomainPolicy: enabled
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/dist
+    autoDeployTrigger: checksPass
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://personal-docs-qa-api.onrender.com

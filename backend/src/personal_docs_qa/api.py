@@ -1,30 +1,31 @@
 import json
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Any, Iterator, Optional
 from typing import Literal
 
+from personal_docs_qa.config import get_allowed_frontend_origins
 from personal_docs_qa.services.qa_service import answer_question, stream_answer_chunks
 
 
-app = FastAPI(title="Personal Docs Q&A API")
+router = APIRouter()
 
-ALLOWED_FRONTEND_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_FRONTEND_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["*"],
-)
-
+def create_app() -> FastAPI:
+    """Create the FastAPI app with environment-driven CORS settings."""
+    fastapi_app = FastAPI(title="Personal Docs Q&A API")
+    fastapi_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=get_allowed_frontend_origins(),
+        allow_credentials=True,
+        allow_methods=["POST", "GET", "OPTIONS"],
+        allow_headers=["*"],
+    )
+    fastapi_app.include_router(router)
+    return fastapi_app
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
@@ -55,19 +56,19 @@ def format_sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@app.get("/")
+@router.get("/")
 def read_root() -> dict[str, str]:
     return {
         "message": "Personal Docs Q&A API is running. Use POST /ask or POST /ask/stream.",
     }
 
 
-@app.get("/health")
+@router.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/ask", response_model=AskResponse)
+@router.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest) -> AskResponse:
     try:
         result = answer_question(
@@ -82,7 +83,7 @@ def ask(request: AskRequest) -> AskResponse:
     return AskResponse(**result)
 
 
-@app.post("/ask/stream")
+@router.post("/ask/stream")
 def ask_stream(request: AskRequest) -> StreamingResponse:
     try:
         sources, answer_stream = stream_answer_chunks(
@@ -118,3 +119,6 @@ def ask_stream(request: AskRequest) -> StreamingResponse:
             "Connection": "keep-alive",
         },
     )
+
+
+app = create_app()

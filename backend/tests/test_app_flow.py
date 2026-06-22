@@ -1,4 +1,5 @@
 import json
+import os
 from unittest.mock import patch
 import unittest
 
@@ -6,7 +7,8 @@ from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 from requests.exceptions import ConnectionError as RequestsConnectionError
 
-from personal_docs_qa.api import app
+from personal_docs_qa.api import app, create_app
+from personal_docs_qa.config import DEFAULT_ALLOWED_FRONTEND_ORIGINS, get_allowed_frontend_origins
 from personal_docs_qa.rag_indexing import (
     build_ingestion_plan,
     build_manifest,
@@ -576,6 +578,77 @@ class ApiTests(unittest.TestCase):
             response.headers["access-control-allow-origin"],
             self.frontend_origin_127,
         )
+
+    def test_get_allowed_frontend_origins_keeps_local_defaults_without_env(self) -> None:
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ALLOWED_FRONTEND_ORIGINS", None)
+            origins = get_allowed_frontend_origins()
+
+        self.assertEqual(origins, DEFAULT_ALLOWED_FRONTEND_ORIGINS)
+
+    def test_get_allowed_frontend_origins_appends_env_origins(self) -> None:
+        render_origin = "https://personal-docs-qa-frontend.onrender.com"
+
+        with patch.dict(
+            os.environ,
+            {
+                "ALLOWED_FRONTEND_ORIGINS": (
+                    f"{render_origin}, http://localhost:5173 , {render_origin}"
+                )
+            },
+            clear=False,
+        ):
+            origins = get_allowed_frontend_origins()
+
+        self.assertEqual(
+            origins,
+            [
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                render_origin,
+            ],
+        )
+
+    def test_ask_endpoint_allows_cors_from_render_frontend_origin_when_configured(self) -> None:
+        render_origin = "https://personal-docs-qa-frontend.onrender.com"
+        test_client = TestClient(create_app())
+        fake_result = {
+            "answer": "Знайшов відповідь у документах.",
+            "sources": [],
+        }
+
+        with patch.dict(
+            os.environ,
+            {"ALLOWED_FRONTEND_ORIGINS": render_origin},
+            clear=False,
+        ):
+            test_client = TestClient(create_app())
+
+            with patch("personal_docs_qa.api.answer_question", return_value=fake_result):
+                response = test_client.post(
+                    "/ask",
+                    json={"question": "Що є в документах?"},
+                    headers={"Origin": render_origin},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"],
+            render_origin,
+        )
+
+    def test_ask_endpoint_blocks_unknown_cors_origin(self) -> None:
+        response = self.client.options(
+            "/ask",
+            headers={
+                "Origin": "https://unknown-frontend.example.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("access-control-allow-origin", response.headers)
 
 
 if __name__ == "__main__":

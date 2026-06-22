@@ -35,4 +35,4 @@ frontend-dev:
 	cd frontend && npm run dev
 
 frontend-build:
-	cd frontend && npm run build
+	cd frontend && npm ci && npm run build

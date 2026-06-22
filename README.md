@@ -97,6 +97,60 @@ CI зараз має три окремі jobs:
 
 CI навмисно не запускає `make eval`, `make ask` або `make index-demo`, бо ці команди залежать від реального OpenAI API key і мережевих викликів.
 
+## GitHub Branch Protection
+
+Branch protection варто вмикати не одразу, а після першого зеленого CI run у GitHub Actions. Причина проста: спочатку корисно переконатися, що workflow уже стабільно працює і GitHub бачить усі потрібні checks з правильними назвами.
+
+### Коли вмикати
+
+Увімкни branch protection після того, як:
+
+- workflow CI хоча б один раз успішно відпрацював у GitHub
+- у списку checks видно `backend-tests`, `frontend-build` і `secret-scan`
+
+Якщо зробити це раніше, GitHub може ще не показувати required checks у списку, і правило доведеться налаштовувати повторно.
+
+### Як увімкнути
+
+1. Відкрий репозиторій у GitHub.
+2. Перейди в `Settings` -> `Branches`.
+3. Натисни `Add branch protection rule`.
+4. У полі branch name pattern введи `main`.
+5. Увімкни `Require a pull request before merging`.
+6. Увімкни `Require status checks to pass before merging`.
+7. Додай required checks:
+   - `backend-tests`
+   - `frontend-build`
+   - `secret-scan`
+8. Збережи правило.
+
+Після цього прямий merge у `main` без PR і без зеленого CI буде заблокований.
+
+### Що це дає команді
+
+- `main` лишається стабільнішою, бо зміни проходять через PR
+- випадковий push із поламаним backend або frontend не потрапляє в основну гілку
+- secret scan теж стає обов'язковою перевіркою перед merge
+- новачкам простіше працювати безпечно, бо GitHub сам підказує правильний процес
+
+## CI vs CD
+
+Просте правило:
+
+- CI у PR перевіряє зміну до merge
+- CD після merge в `main` публікує вже прийняту зміну
+
+У цьому репозиторії це виглядає так:
+
+- CI у PR запускає `backend-tests`, `frontend-build` і `secret-scan`, щоб перевірити, що pull request не ламає проєкт
+- CD після merge в `main` починається вже після успішного CI, коли hosting platform може забрати новий commit і зробити deploy
+
+Чому branch protection корисний:
+
+- вона з'єднує review process і CI в один обов'язковий gate перед `main`
+- допомагає не зламати deploy випадковим merge
+- робить процес передбачуваним: спочатку PR і checks, потім merge, потім deploy
+
 Або напряму:
 
 ```bash
@@ -129,6 +183,18 @@ Backend:
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+ALLOWED_FRONTEND_ORIGINS=https://personal-docs-qa-frontend.onrender.com
+```
+
+`ALLOWED_FRONTEND_ORIGINS` це необов'язкова змінна середовища для CORS. Backend завжди дозволяє локальні Vite origins:
+
+- `http://localhost:5173`
+- `http://127.0.0.1:5173`
+
+Якщо додати `ALLOWED_FRONTEND_ORIGINS`, її значення не замінює local defaults, а додається до них. Для кількох frontend URL використовуй кому:
+
+```env
+ALLOWED_FRONTEND_ORIGINS=https://personal-docs-qa-frontend.onrender.com,https://staging.example.com
 ```
 
 Frontend:
@@ -137,82 +203,119 @@ Frontend:
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-## Deploy Backend On Render
+## Deploy On Render
 
-У цьому milestone деплоїмо тільки backend. Основний шлях: [Render Blueprint](https://render.com/docs/blueprint-spec), тобто Render читає `render.yaml` з репозиторію і сам створює service з потрібними командами та environment variables.
+Для першої production-версії в цьому репозиторії використовуємо [Render Blueprint](https://render.com/docs/blueprint-spec): Render читає `render.yaml` з кореня репозиторію і створює одразу два сервіси.
 
-У репозиторії є `render.yaml`, який описує backend service:
+- backend web service: `personal-docs-qa-api`
+- frontend static site: `personal-docs-qa-frontend`
 
-```yaml
-buildCommand: pip install -r backend/requirements.txt
-startCommand: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
-healthCheckPath: /health
-autoDeployTrigger: checksPass
-envVars:
-  - key: PYTHON_VERSION
-    value: 3.12.12
-```
+У `render.yaml` зараз зафіксовано:
 
-Що важливо:
+- backend build command: `pip install -r backend/requirements.txt`
+- backend start command: `PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT`
+- frontend build command: `cd frontend && npm ci && npm run build`
+- frontend publish path: `frontend/dist`
+- frontend public API URL: `VITE_API_BASE_URL=https://personal-docs-qa-api.onrender.com`
+- backend CORS allowlist для Render frontend: `ALLOWED_FRONTEND_ORIGINS=https://personal-docs-qa-frontend.onrender.com`
 
-- service name: `personal-docs-qa-api`
-- Python зафіксований на `3.12.12`, щоб Render не перемикав service на нову default major/minor версію автоматично.
-- `OPENAI_API_KEY` не зберігається в git. У `render.yaml` він позначений як `sync: false`, тому Render попросить ввести значення в dashboard.
-- `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити як public default values.
-- `data/index/` не комітиться. На hosting index буде створюватися заново під час startup command.
-- deploy hooks тут не використовуються. Rebuild index виконується прямо в `startCommand`.
-- Якщо OpenAI тимчасово недоступний, startup indexing повторює з'єднання до трьох разів з короткими паузами.
+`VITE_API_BASE_URL` тут навмисно зберігається прямо в `render.yaml`, бо це не secret. `OPENAI_API_KEY`, навпаки, лишається secret і в Blueprint має `sync: false`.
 
 ### Blueprint Setup
 
-1. Запуш репозиторій у GitHub/GitLab/Bitbucket.
+1. Запуш репозиторій у GitHub, GitLab або Bitbucket.
 2. У Render Dashboard натисни `New +` -> `Blueprint`.
-3. Підключи свій repo і вибери цей репозиторій.
-4. Render покаже preview сервісу з `render.yaml`. Переконайся, що бачиш `personal-docs-qa-api`.
-5. Під час створення Blueprint додай secret:
+3. Підключи репозиторій і вибери цей проєкт.
+4. Render покаже сервіси з `render.yaml`. Переконайся, що в preview видно:
+   - `personal-docs-qa-api`
+   - `personal-docs-qa-frontend`
+5. Під час створення Blueprint введи лише один secret:
 
 ```env
 OPENAI_API_KEY=your_real_key
 ```
 
-6. `OPENAI_MODEL` і `OPENAI_EMBEDDING_MODEL` можна лишити без змін, бо Blueprint уже задає default values.
+6. Залиш решту значень із `render.yaml` без змін. Це стосується:
+   - `OPENAI_MODEL`
+   - `OPENAI_EMBEDDING_MODEL`
+   - `ALLOWED_FRONTEND_ORIGINS`
+   - `VITE_API_BASE_URL`
 7. Створи Blueprint і дочекайся першого deploy.
 
-Після deploy відкрий:
+Після першого deploy очікувані URL такі:
 
 ```text
-https://your-service-name.onrender.com/health
-https://your-service-name.onrender.com/docs
+https://personal-docs-qa-api.onrender.com
+https://personal-docs-qa-frontend.onrender.com
 ```
 
-### Manual Web Service Fallback
+У першій версії ми не додаємо Render PR previews. Це означає, що в `render.yaml` немає окремого `previews` конфігу і деплой лишається простішим для старту.
 
-Якщо Blueprint з якоїсь причини не підходить, можна створити звичайний Web Service вручну. Вистав:
+### Why Static Site Looks Like This
+
+Для Static Site у Blueprint використовується `type: web` разом із `runtime: static`, а publish path у Render YAML задається полем `staticPublishPath`. Це відповідає офіційній документації Render для Blueprint static sites.
+
+### Manual Smoke Test Checklist
+
+Після deploy пройди короткий smoke test уже на production frontend і production backend.
+
+1. Відкрий backend health check:
 
 ```text
-Language: Python
-Build Command: pip install -r backend/requirements.txt
-Start Command: PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
-Health Check Path: /health
-Auto-Deploy: After CI checks pass
-PYTHON_VERSION: 3.12.12
+https://personal-docs-qa-api.onrender.com/health
 ```
 
-Потім у `Environment` додай:
+Очікування:
 
-```env
-OPENAI_API_KEY=your_real_key
-OPENAI_MODEL=gpt-4.1-mini
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+- HTTP `200 OK`
+- JSON `{"status":"ok"}`
+
+2. Відкрий backend Swagger UI:
+
+```text
+https://personal-docs-qa-api.onrender.com/docs
 ```
 
-Після deploy перевір API:
+Очікування:
 
-```bash
-curl -X POST "https://your-service-name.onrender.com/ask" \
-  -H "Content-Type: application/json" \
-  -d '{"question":"Яка різниця між MX-5 NA і ND?"}'
+- Swagger UI відкривається без `502` або `504`
+- видно `GET /health`, `POST /ask` і `POST /ask/stream`
+
+3. Відкрий frontend public URL:
+
+```text
+https://personal-docs-qa-frontend.onrender.com
 ```
+
+Очікування:
+
+- сторінка відкривається без помилок build/deploy
+- chat UI рендериться
+- frontend не падає з `Failed to fetch` одразу після завантаження
+
+4. Постав питання у frontend UI, наприклад:
+
+```text
+Яка різниця між MX-5 NA і ND?
+```
+
+Очікування:
+
+- frontend надсилає запит на `https://personal-docs-qa-api.onrender.com/ask/stream`
+- відповідь з'являється поступово, а не лише в кінці
+- після завершення відповіді видно список `Sources`
+- у `Sources` є назви файлів із `docs/`
+
+5. Якщо щось не працює, перевір logs:
+
+- `Render Dashboard -> personal-docs-qa-api -> Logs`
+- `Render Dashboard -> personal-docs-qa-frontend -> Events`
+
+6. Пам'ятай про cold start і rebuild index:
+
+- на Render free plan backend може прокидатися із затримкою
+- під час старту backend заново перевіряє або перебудовує локальний Chroma index
+- для цього потрібен валідний `OPENAI_API_KEY`
 
 ### Chroma Index On Hosting
 
@@ -235,6 +338,66 @@ PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing
 ```
 
 Тоді Chroma index і manifest збережуться між restart/deploy, а startup зможе перевикористати index, якщо документи не змінилися.
+
+### Local Frontend Against Render Backend
+
+Щоб перевірити локальний frontend проти Render backend:
+
+1. Створи або онови `frontend/.env`:
+
+```env
+VITE_API_BASE_URL=https://personal-docs-qa-api.onrender.com
+```
+
+2. Запусти frontend:
+
+```bash
+make frontend-dev
+```
+
+3. Відкрий локальний Vite URL, який покаже термінал, зазвичай:
+
+```text
+http://127.0.0.1:5173
+```
+
+4. Постав питання через UI, наприклад:
+
+```text
+Яка різниця між MX-5 NA і ND?
+```
+
+Очікування:
+
+- UI відкривається локально
+- frontend відправляє запит на `https://personal-docs-qa-api.onrender.com`
+- у чаті з'являється відповідь backend
+- перший запит може бути повільнішим, якщо backend прокидається після cold start
+- якщо бачиш `Failed to fetch` або CORS-помилку, перевір `frontend/.env`, backend `ALLOWED_FRONTEND_ORIGINS`, Render URL і backend logs
+
+### Smoke Test Script
+
+Після deploy можна пройти smoke test у такому порядку:
+
+```text
+1. Відкрити https://personal-docs-qa-api.onrender.com/health
+2. Відкрити https://personal-docs-qa-api.onrender.com/docs
+3. Виконати POST /ask через Swagger UI або curl
+4. Перевірити Render logs
+5. Виставити frontend/.env -> VITE_API_BASE_URL=https://personal-docs-qa-api.onrender.com
+6. Запустити make frontend-dev
+7. Поставити те саме питання через UI
+```
+
+Expected results:
+
+- `/health` повертає `200` і `{"status":"ok"}`
+- `/docs` відкривається і показує Swagger endpoints
+- `POST /ask` повертає `200` з `answer` і `sources`
+- у Render logs немає startup, auth або runtime помилок
+- перший запит після idle може бути повільним через Render free cold start
+- перший startup після deploy або restart може бути повільнішим через rebuild Chroma index
+- локальний frontend показує відповідь від Render backend
 
 ### Auto Deploy Check
 
@@ -261,7 +424,7 @@ curl -X POST "https://your-service-name.onrender.com/ask" \
 
 - FastAPI routes
 - request/response schema
-- CORS
+- CORS через `ALLOWED_FRONTEND_ORIGINS` + local defaults
 - HTTP error mapping
 
 `backend/src/personal_docs_qa/services/qa_service.py`
