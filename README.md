@@ -97,6 +97,76 @@ CI зараз має три окремі jobs:
 
 CI навмисно не запускає `make eval`, `make ask` або `make index-demo`, бо ці команди залежать від реального OpenAI API key і мережевих викликів.
 
+## Troubleshooting GitHub Actions
+
+Якщо GitHub Actions впав, найкращий перший крок це повторити ту саму перевірку локально. Так легше зрозуміти, чи проблема в коді, залежностях, змінних середовища або випадковому CI environment issue.
+
+### `backend-tests` failed
+
+Що це означає:
+
+- backend unit tests не пройшли
+- CI запускає той самий `make test`, який ти можеш запустити локально
+
+Що робити локально:
+
+```bash
+make test
+```
+
+Якщо тест падає локально теж:
+
+- уважно прочитай traceback з першої помилки
+- перевір, чи не зламалася backend логіка або імпорти
+- перевір, чи зміни в `README` або frontend випадково не зачепили backend файли
+
+Якщо локально все зелене, а в CI ні:
+
+- перевір, чи всі потрібні файли закомічені
+- перевір, чи немає різниці між локальним середовищем і тим, що ставить CI
+- подивися конкретний log job `backend-tests` у GitHub Actions
+
+### `frontend-build` failed
+
+Що це означає:
+
+- production build для Vite frontend не зібрався
+- CI перевіряє, чи frontend реально можна задеплоїти
+
+Що робити локально:
+
+```bash
+make frontend-build
+```
+
+Якщо build падає:
+
+- подивися на першу помилку в output
+- перевір синтаксис у `frontend/src/`
+- перевір імпорти, назви файлів і змінні середовища, які використовує frontend build
+
+### `secret-scan` failed
+
+Що це означає:
+
+- CI знайшов рядок, схожий на реальний secret, наприклад справжній API key
+
+Що перевірити:
+
+- чи не закомічений реальний `OPENAI_API_KEY`
+- чи немає в коді, `.env`, прикладах або log snippets рядків на кшталт `sk-...`
+
+Корисна локальна перевірка:
+
+```bash
+rg "OPENAI_API_KEY|sk-|api_key|token|secret|password" .
+```
+
+Безпечне правило:
+
+- у репозиторії мають бути тільки placeholder values на кшталт `your_api_key_here`
+- реальний ключ має жити лише у локальному `.env` або в Render secret settings
+
 ## GitHub Branch Protection
 
 Branch protection варто вмикати не одразу, а після першого зеленого CI run у GitHub Actions. Причина проста: спочатку корисно переконатися, що workflow уже стабільно працює і GitHub бачить усі потрібні checks з правильними назвами.
@@ -317,6 +387,139 @@ https://personal-docs-qa-frontend.onrender.com
 - під час старту backend заново перевіряє або перебудовує локальний Chroma index
 - для цього потрібен валідний `OPENAI_API_KEY`
 
+## Troubleshooting Render
+
+Нижче зібрані найтиповіші проблеми для цього проєкту. Ідея проста: спочатку зрозуміти, чи проблема в build, startup, health check, backend API чи зв'язку між frontend і backend.
+
+### Render build failed
+
+Що перевірити першим:
+
+- `buildCommand` у [`render.yaml`](/Users/vadym_moiseyenko/Documents/LangChain/render.yaml)
+- `backend/requirements.txt` для backend service
+- чи всі потрібні frontend/backend залежності реально записані у відповідні dependency files
+
+Для цього проєкту очікувано:
+
+- backend build command: `pip install -r backend/requirements.txt`
+- frontend build command: `cd frontend && npm ci && npm run build`
+
+Якщо Render не може зібрати backend:
+
+- перевір, чи потрібний Python package є в `backend/requirements.txt`
+- перевір log build step у Render
+
+Якщо Render не може зібрати frontend:
+
+- повтори локально:
+
+```bash
+make frontend-build
+```
+
+### Render startup failed
+
+Що це означає:
+
+- build уже завершився, але сервіс не зміг нормально стартувати
+
+Що перевірити:
+
+- чи заданий `OPENAI_API_KEY` у Render
+- чи правильний `startCommand` у [`render.yaml`](/Users/vadym_moiseyenko/Documents/LangChain/render.yaml)
+- що саме показують `Logs` у backend service
+
+Для цього проєкту очікуваний backend start command:
+
+```bash
+PYTHONPATH=backend/src python -m personal_docs_qa.rag_indexing && PYTHONPATH=backend/src uvicorn personal_docs_qa.api:app --host 0.0.0.0 --port $PORT
+```
+
+Це важливо, бо backend спочатку запускає indexing, а вже потім стартує API server.
+
+### `/health` не працює
+
+Що перевірити:
+
+- чи сервіс у Render має статус `Live`
+- чи є помилки в `Logs`
+- чи не впав startup ще до того, як FastAPI підняв endpoint
+
+Очікувана локальна і production перевірка:
+
+- `http://127.0.0.1:8000/health`
+- `https://personal-docs-qa-api.onrender.com/health`
+
+Очікувана відповідь:
+
+- HTTP `200`
+- `{"status":"ok"}`
+
+### `/ask` повертає `500`
+
+Найчастіші причини:
+
+- неправильний або відсутній `OPENAI_API_KEY`
+- немає доступу до OpenAI API через network issue
+- проблема під час indexing або відкриття локального Chroma index
+
+Що робити:
+
+- перевір backend logs у Render
+- перевір, чи локально працює `make index-demo`
+- перевір, чи локально працює `make ask QUESTION="Яка різниця між MX-5 NA і ND?"`
+
+Пам'ятай:
+
+- `POST /ask` і `POST /ask/stream` залежать і від OpenAI, і від локального index
+- якщо indexing не відпрацював, answer route теж може зламатися
+
+### Frontend не може викликати backend
+
+Найчастіші причини:
+
+- неправильний `VITE_API_BASE_URL`
+- CORS не дозволяє frontend origin
+
+Що перевірити:
+
+- `frontend/.env` локально
+- `VITE_API_BASE_URL` у Render frontend service
+- `ALLOWED_FRONTEND_ORIGINS` у backend environment
+
+Для локального frontend проти локального backend очікувано:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Для Render frontend проти Render backend очікувано:
+
+```env
+VITE_API_BASE_URL=https://personal-docs-qa-api.onrender.com
+```
+
+Якщо бачиш `Failed to fetch`:
+
+- перевір browser console
+- перевір backend logs
+- переконайся, що backend URL правильний і реально відкривається
+
+### Cold start and free plan behavior
+
+Для Render free plan повільний перший запит після idle це очікувана поведінка.
+
+Що важливо розуміти:
+
+- backend може "прокидатися" кілька десятків секунд
+- після restart або deploy backend може стартувати довше, бо запускає indexing
+- це не завжди означає bug
+
+Практичне правило:
+
+- спочатку дочекайся, поки `/health` знову стане `200`
+- лише після цього перевіряй `POST /ask` або frontend chat
+
 ### Chroma Index On Hosting
 
 Локально Chroma index лежить у `data/index/chroma/`, а ingestion manifest у `data/index/ingestion_manifest.json`. Ця папка згенерована і не має потрапляти в git.
@@ -398,6 +601,22 @@ Expected results:
 - перший запит після idle може бути повільним через Render free cold start
 - перший startup після deploy або restart може бути повільнішим через rebuild Chroma index
 - локальний frontend показує відповідь від Render backend
+
+## First 10 Minutes Debug Checklist
+
+Коли щось зламалося, не намагайся дебажити все одразу. Пройди ці кроки по порядку:
+
+1. Перевір, де саме проблема: `backend-tests`, `frontend-build`, Render build, Render startup, `/health`, `/ask` чи frontend networking.
+2. Якщо впав CI, повтори ту саму команду локально:
+   `make test` для backend або `make frontend-build` для frontend.
+3. Якщо підозра на secrets, виконай:
+   `rg "OPENAI_API_KEY|sk-|api_key|token|secret|password" .`
+4. Якщо проблема в Render backend, відкрий `Logs` і перевір `OPENAI_API_KEY`, `buildCommand`, `startCommand`.
+5. Перевір health endpoint:
+   `https://personal-docs-qa-api.onrender.com/health`
+6. Якщо `/ask` повертає `500`, перевір OpenAI key, network доступ і indexing flow.
+7. Якщо frontend не дістається до backend, перевір `VITE_API_BASE_URL` і `ALLOWED_FRONTEND_ORIGINS`.
+8. Пам'ятай, що на Render free plan cold start і повільний перший запит це нормальна поведінка.
 
 ### Auto Deploy Check
 
