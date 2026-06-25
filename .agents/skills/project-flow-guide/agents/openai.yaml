@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Flow Guide"
+  short_description: "Keep the project HTML guide current"
+  default_prompt: "Use $project-flow-guide to update project-flow-guide.html after recent project changes."
