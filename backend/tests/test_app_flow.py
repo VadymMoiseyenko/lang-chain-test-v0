@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 from requests.exceptions import ConnectionError as RequestsConnectionError
 
-from personal_docs_qa.api import app, create_app
+from personal_docs_qa.api import INTERNAL_ERROR_MESSAGE, app, create_app
 from personal_docs_qa.config import DEFAULT_ALLOWED_FRONTEND_ORIGINS, get_allowed_frontend_origins
 from personal_docs_qa.rag_indexing import (
     build_ingestion_plan,
@@ -433,6 +433,37 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_ask_endpoint_hides_internal_error_details(self) -> None:
+        secret_marker = "sk-secret-marker"
+
+        with patch(
+            "personal_docs_qa.api.answer_question",
+            side_effect=RuntimeError(secret_marker),
+        ):
+            with self.assertLogs("personal_docs_qa.api", level="ERROR") as logs:
+                response = self.client.post(
+                    "/ask",
+                    json={"question": "Що є в документах?"},
+                )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"detail": INTERNAL_ERROR_MESSAGE})
+        self.assertNotIn(secret_marker, response.text)
+        self.assertNotIn(secret_marker, "\n".join(logs.output))
+
+    def test_ask_endpoint_keeps_value_error_as_bad_request(self) -> None:
+        with patch(
+            "personal_docs_qa.api.answer_question",
+            side_effect=ValueError("Некоректне питання"),
+        ):
+            response = self.client.post(
+                "/ask",
+                json={"question": "Що є в документах?"},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"detail": "Некоректне питання"})
+
     def test_ask_stream_returns_sources_chunks_and_done_events(self) -> None:
         def fake_stream():
             yield "Перший фрагмент "
@@ -475,6 +506,27 @@ class ApiTests(unittest.TestCase):
             json.dumps({"content": "і другий."}, ensure_ascii=False),
             body,
         )
+        self.assertLess(body.index("event: sources"), body.index("event: answer_chunk"))
+        self.assertLess(body.rindex("event: answer_chunk"), body.index("event: done"))
+        self.assertNotIn("event: error", body)
+
+    def test_ask_stream_hides_error_raised_before_stream_starts(self) -> None:
+        secret_marker = "sk-secret-marker"
+
+        with patch(
+            "personal_docs_qa.api.stream_answer_chunks",
+            side_effect=RuntimeError(secret_marker),
+        ):
+            with self.assertLogs("personal_docs_qa.api", level="ERROR") as logs:
+                response = self.client.post(
+                    "/ask/stream",
+                    json={"question": "Що є в документах?"},
+                )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json(), {"detail": INTERNAL_ERROR_MESSAGE})
+        self.assertNotIn(secret_marker, response.text)
+        self.assertNotIn(secret_marker, "\n".join(logs.output))
 
     def test_ask_stream_forwards_chat_history(self) -> None:
         with patch(
@@ -504,27 +556,33 @@ class ApiTests(unittest.TestCase):
         )
 
     def test_ask_stream_returns_error_event_when_stream_fails(self) -> None:
+        secret_marker = "sk-secret-marker"
+
         def broken_stream():
             yield "Початок"
-            raise RuntimeError("Stream failed")
+            raise RuntimeError(secret_marker)
 
         with patch(
             "personal_docs_qa.api.stream_answer_chunks",
             return_value=([], broken_stream()),
         ):
-            with self.client.stream(
-                "POST",
-                "/ask/stream",
-                json={"question": "Що є в документах?"},
-            ) as response:
-                body = response.read().decode()
+            with self.assertLogs("personal_docs_qa.api", level="ERROR") as logs:
+                with self.client.stream(
+                    "POST",
+                    "/ask/stream",
+                    json={"question": "Що є в документах?"},
+                ) as response:
+                    body = response.read().decode()
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("event: error", body)
         self.assertIn(
-            json.dumps({"message": "Stream failed"}, ensure_ascii=False),
+            json.dumps({"message": INTERNAL_ERROR_MESSAGE}, ensure_ascii=False),
             body,
         )
+        self.assertNotIn(secret_marker, body)
+        self.assertNotIn(secret_marker, "\n".join(logs.output))
+        self.assertNotIn("event: done", body)
 
     def test_ask_endpoint_allows_cors_preflight_from_local_frontend(self) -> None:
         response = self.client.options(

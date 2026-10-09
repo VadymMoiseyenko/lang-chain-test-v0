@@ -1,4 +1,6 @@
 import json
+import logging
+import traceback
 
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +13,20 @@ from personal_docs_qa.config import get_allowed_frontend_origins
 from personal_docs_qa.services.qa_service import answer_question, stream_answer_chunks
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+INTERNAL_ERROR_MESSAGE = "Сталася внутрішня помилка. Спробуйте ще раз пізніше."
+
+
+def log_internal_error(operation: str, error: Exception) -> None:
+    """Log stack frames without copying a potentially sensitive error message."""
+    stack_trace = "".join(traceback.format_tb(error.__traceback__))
+    logger.error(
+        "Unexpected error during %s (%s):\n%s",
+        operation,
+        type(error).__name__,
+        stack_trace,
+    )
 
 
 def create_app() -> FastAPI:
@@ -77,8 +92,9 @@ def ask(request: AskRequest) -> AskResponse:
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
+    except Exception as error:
+        log_internal_error("answer generation", error)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR_MESSAGE) from error
 
     return AskResponse(**result)
 
@@ -92,8 +108,9 @@ def ask_stream(request: AskRequest) -> StreamingResponse:
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    except RuntimeError as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
+    except Exception as error:
+        log_internal_error("stream preparation", error)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR_MESSAGE) from error
 
     def event_generator() -> Iterator[str]:
         yield format_sse_event("sources", {"sources": sources})
@@ -106,7 +123,8 @@ def ask_stream(request: AskRequest) -> StreamingResponse:
 
                 yield format_sse_event("answer_chunk", {"content": chunk_text})
         except Exception as error:
-            yield format_sse_event("error", {"message": str(error)})
+            log_internal_error("answer streaming", error)
+            yield format_sse_event("error", {"message": INTERNAL_ERROR_MESSAGE})
             return
 
         yield format_sse_event("done", {"status": "completed"})
